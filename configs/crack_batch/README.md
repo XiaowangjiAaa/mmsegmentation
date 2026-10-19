@@ -84,6 +84,7 @@ scripts\batch_train.bat --gpus 0,1
 | `--skip mask2former_r50` | 跳过指定算法 |
 | `--stop-on-failure` | 某个算法失败后停止整个队列 |
 | `--log-interval N` | 每 N iter 记录一次 loss；默认 50，`1` 为逐 iter |
+| `--no-stream-logs` | 不把子进程日志实时打印到终端（默认实时打印） |
 | `--dry-run` | 只打印命令，不训练 |
 | `--list` | 列出算法和配置 |
 | `--work-root work_dirs/crack_batch` | 工作目录根 |
@@ -127,12 +128,19 @@ work_dirs/crack_batch/
    - 子进程的完整 stdout/stderr；
    - 包含 mmseg 打印的每一条 loss/学习率/验证结果；
    - 进程异常时也在这里看到完整报错。
-   - 批量脚本的终端只打印启动/结束事件；某个算法失败时会自动把该日志的
-     最后 15 行打印到终端。实时查看可以开另一个终端：
+   - 默认会把子进程日志实时打印到终端，每行带算法前缀，例如：
+
+     ```text
+     [convnext_tiny] 10/19 13:23:43 - mmengine - INFO - Iter(train) ...
+     ```
+
+     两个 GPU 的日志会交错显示，用前缀区分。只想看调度事件时加
+     `--no-stream-logs`；也可以另开终端：
 
      ```bash
      tail -f work_dirs/crack_batch/logs/*.log
      ```
+   - 某个算法失败时，脚本会自动把该日志的最后 15 行打印到终端。
 2. **MMSeg 日志** `<name>/<timestamp>/<timestamp>.log`
    - 训练日志，默认每 50 iter 一行：
 

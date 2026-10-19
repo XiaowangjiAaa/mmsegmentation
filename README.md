@@ -361,7 +361,9 @@ python scripts/prepare_efficientvit_b0.py
 `batch_summary.json` 为状态汇总，各算法子目录下保存最优 checkpoint。
 默认每 50 iter 记录一次 loss；`--log-interval 1` 可逐 iter 记录。
 
-批量脚本终端只打印 GPU 启动/结束事件，训练 loss 写在日志文件里；实时查看：
+批量脚本默认把每个算法的训练日志实时打印到终端（每行带
+`[算法名]` 前缀），同时写入日志文件；不想在终端看时加
+`--no-stream-logs`。也可以另开终端：
 
 ```bash
 tail -f work_dirs/crack_batch/logs/*.log

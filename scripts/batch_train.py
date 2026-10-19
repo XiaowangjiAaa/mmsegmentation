@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from datetime import datetime
@@ -72,6 +73,13 @@ def parse_args():
         '--log-interval', type=int, default=0,
         help='iterations between loss log lines; 0 keeps the config (50), '
         '1 logs every iteration')
+    parser.add_argument(
+        '--stream-logs', dest='stream_logs', action='store_true',
+        default=True,
+        help='stream child training output to the terminal (default)')
+    parser.add_argument(
+        '--no-stream-logs', dest='stream_logs', action='store_false',
+        help='only write child output to log files')
     parser.add_argument(
         '--only', default=None,
         help='comma separated run names to execute')
@@ -156,6 +164,20 @@ def read_tail(path, count=15):
     except OSError:
         return []
     return [line.rstrip('\n') for line in lines[-count:]]
+
+
+def pump_output(stream, log_file, prefix):
+    """Write a child pipe to both the log file and the terminal."""
+    try:
+        for line in iter(stream.readline, ''):
+            log_file.write(line)
+            log_file.flush()
+            print(f'{prefix} {line}', end='', flush=True)
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
 
 
 def check_runtime(args, gpus):
@@ -280,13 +302,29 @@ def main():
         log_file = open(log_path, 'w', encoding='utf-8')
         print(f'[{datetime.now():%H:%M:%S}] GPU{gpu} start {name}')
         try:
-            proc = subprocess.Popen(
-                cmd,
-                cwd=REPO_ROOT,
-                env=env,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True)
+            if args.stream_logs:
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=REPO_ROOT,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1)
+                pump = threading.Thread(
+                    target=pump_output,
+                    args=(proc.stdout, log_file, f'[{name}]'),
+                    daemon=True)
+                pump.start()
+            else:
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=REPO_ROOT,
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True)
+                pump = None
         except Exception as exc:  # pragma: no cover - environment specific
             log_file.close()
             print(f'[{datetime.now():%H:%M:%S}] GPU{gpu} launch failed '
@@ -311,6 +349,7 @@ def main():
             'log_path': str(log_path),
             'proc': proc,
             'log_file': log_file,
+            'pump_thread': pump,
             'started_at': datetime.now().isoformat(timespec='seconds'),
         }
 
@@ -327,6 +366,9 @@ def main():
                 return_code = state['proc'].poll()
                 if return_code is None:
                     continue
+                pump = state.pop('pump_thread', None)
+                if pump is not None:
+                    pump.join(timeout=10)
                 state['log_file'].close()
                 state.pop('proc')
                 state.pop('log_file')
@@ -349,7 +391,10 @@ def main():
                 del active[gpu]
                 if return_code != 0 and args.stop_on_failure:
                     for other in active.values():
+                        pump = other.pop('pump_thread', None)
                         stop_process(other.pop('proc'))
+                        if pump is not None:
+                            pump.join(timeout=10)
                         other.pop('log_file').close()
                         other['return_code'] = -1
                         other['status'] = 'interrupted'
@@ -368,7 +413,10 @@ def main():
     except KeyboardInterrupt:
         print('\nInterrupted; stopping running jobs...')
         for state in active.values():
+            pump = state.pop('pump_thread', None)
             stop_process(state.pop('proc'))
+            if pump is not None:
+                pump.join(timeout=10)
             state.pop('log_file').close()
             state['return_code'] = -1
             state['status'] = 'interrupted'
