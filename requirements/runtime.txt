@@ -1,0 +1,7 @@
+ftfy
+matplotlib
+numpy
+packaging
+prettytable
+regex
+scipy
