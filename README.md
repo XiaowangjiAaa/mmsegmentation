@@ -63,7 +63,80 @@ bash scripts/setup_linux.sh --force --with-tests
 安装完成后自动执行 `tools/verify_env.py`。更多参数见
 [scripts/README.md](scripts/README.md)。
 
-### 1.2 手动安装
+环境位于仓库根目录的 `./.venv-mmseg`，**使用前需要激活**，见下一节。
+
+### 1.2 激活环境
+
+Windows（PowerShell / Anaconda Prompt）：
+
+```powershell
+conda activate .\.venv-mmseg
+
+# 或使用绝对路径
+conda activate F:\UTS_work_code\mmsegmentation\.venv-mmseg
+```
+
+Linux：
+
+```bash
+conda activate ./.venv-mmseg
+```
+
+激活成功后，命令行提示符前会出现 `(.venv-mmseg)`。可以用下面的命令确认
+当前 Python 确实来自该环境：
+
+```bash
+python -c "import sys; print(sys.executable)"
+```
+
+如果提示 `conda: 无法将“conda”项识别为 ...`，或提示
+`Your shell has not been properly configured to use 'conda activate'`：
+
+```powershell
+# Windows PowerShell
+conda init powershell
+# 关闭并重新打开终端后，再执行 conda activate
+```
+
+```bash
+# Linux bash
+conda init bash
+source ~/.bashrc
+```
+
+如果安装时没有找到 conda、脚本回退到了 Python `venv`，激活方式不同：
+
+```powershell
+# Windows PowerShell
+.\.venv-mmseg\Scripts\Activate.ps1
+
+# Windows cmd
+.\.venv-mmseg\Scripts\activate.bat
+```
+
+```bash
+# Linux
+source ./.venv-mmseg/bin/activate
+```
+
+不想激活也可以直接使用环境里的解释器：
+
+```powershell
+# Windows
+.\.venv-mmseg\python.exe tools\verify_env.py
+.\.venv-mmseg\python.exe scripts\batch_train.py --gpus 0,1
+```
+
+```bash
+# Linux
+./.venv-mmseg/bin/python tools/verify_env.py
+./.venv-mmseg/bin/python scripts/batch_train.py --gpus 0,1
+```
+
+### 1.3 手动安装
+
+手动安装下面使用名为 `mmseg` 的 conda 环境；一键脚本使用的是
+`./.venv-mmseg`，两者选一种即可。
 
 ```bash
 conda create -n mmseg python=3.10 -y
@@ -86,7 +159,7 @@ https://download.pytorch.org/whl/cpu
 https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html
 ```
 
-### 1.3 验证环境
+### 1.4 验证环境
 
 ```bash
 python tools/verify_env.py
