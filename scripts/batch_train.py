@@ -148,6 +148,16 @@ def stop_process(proc):
             proc.kill()
 
 
+def read_tail(path, count=15):
+    """Return the last ``count`` lines of a log file."""
+    try:
+        with open(path, encoding='utf-8', errors='replace') as file:
+            lines = file.readlines()
+    except OSError:
+        return []
+    return [line.rstrip('\n') for line in lines[-count:]]
+
+
 def check_runtime(args, gpus):
     """Validate visible GPUs and disable AMP when running on CPU."""
     try:
@@ -324,6 +334,14 @@ def main():
                 state['status'] = 'ok' if return_code == 0 else 'failed'
                 state['finished_at'] = datetime.now().isoformat(
                     timespec='seconds')
+                if return_code != 0:
+                    error_tail = read_tail(state['log_path'])
+                    state['error_tail'] = error_tail
+                    print(f'--- {state["name"]} failed (rc={return_code}), '
+                          f'last {len(error_tail)} lines ---')
+                    for line in error_tail:
+                        print(line)
+                    print('--- end of failure tail ---')
                 records.append(state)
                 print(f'[{datetime.now():%H:%M:%S}] GPU{gpu} done '
                       f'{state["name"]} (rc={return_code}) '

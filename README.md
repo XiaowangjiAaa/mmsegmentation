@@ -360,6 +360,14 @@ python scripts/prepare_efficientvit_b0.py
 `<name>/<timestamp>/vis_data/scalars.json` 为逐条结构化指标，
 `batch_summary.json` 为状态汇总，各算法子目录下保存最优 checkpoint。
 默认每 50 iter 记录一次 loss；`--log-interval 1` 可逐 iter 记录。
+
+批量脚本终端只打印 GPU 启动/结束事件，训练 loss 写在日志文件里；实时查看：
+
+```bash
+tail -f work_dirs/crack_batch/logs/*.log
+```
+
+某个算法失败时，脚本会自动打印该日志最后 15 行到终端。
 详细说明见 [configs/crack_batch/README.md](configs/crack_batch/README.md)。
 
 ---

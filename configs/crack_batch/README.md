@@ -127,6 +127,12 @@ work_dirs/crack_batch/
    - 子进程的完整 stdout/stderr；
    - 包含 mmseg 打印的每一条 loss/学习率/验证结果；
    - 进程异常时也在这里看到完整报错。
+   - 批量脚本的终端只打印启动/结束事件；某个算法失败时会自动把该日志的
+     最后 15 行打印到终端。实时查看可以开另一个终端：
+
+     ```bash
+     tail -f work_dirs/crack_batch/logs/*.log
+     ```
 2. **MMSeg 日志** `<name>/<timestamp>/<timestamp>.log`
    - 训练日志，默认每 50 iter 一行：
 
