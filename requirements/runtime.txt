@@ -5,3 +5,4 @@ packaging
 prettytable
 regex
 scipy
+setuptools<81

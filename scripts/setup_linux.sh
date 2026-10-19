@@ -178,7 +178,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
 fi
 
 # ------------------------------------------------------------------ packages
-run -m pip install --upgrade pip setuptools wheel
+run -m pip install --upgrade pip wheel "setuptools<81"
 run -m pip install "numpy==1.26.4" "opencv-python==4.8.1.78" \
     --only-binary=opencv-python
 

@@ -56,6 +56,7 @@ bash scripts/setup_linux.sh --force --with-tests
 | MMCV | 2.1.0（预编译 wheel） |
 | MMEngine | 0.10.7 |
 | MMDetection / MMPretrain | 3.3.0 / 1.2.0（ConvNeXt、Mask2Former） |
+| setuptools | `<81`（`torch.utils.cpp_extension` 仍依赖 `pkg_resources`） |
 | MMSegmentation | 本仓库，editable 安装 |
 | NumPy | 1.26.4 |
 | OpenCV | 4.8.1.78 |
@@ -142,7 +143,7 @@ source ./.venv-mmseg/bin/activate
 conda create -n mmseg python=3.10 -y
 conda activate mmseg
 
-pip install --upgrade pip setuptools wheel
+pip install --upgrade pip wheel "setuptools<81"
 pip install numpy==1.26.4 opencv-python==4.8.1.78
 pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118
 pip install mmengine==0.10.7
@@ -151,6 +152,11 @@ pip install mmdet==3.3.0 mmpretrain==1.2.0
 pip install -r requirements/runtime.txt
 pip install -e . --no-deps --no-build-isolation
 ```
+
+> `setuptools>=81` 已移除 `pkg_resources`，而 PyTorch 的
+> `torch.utils.cpp_extension` 仍会导入它，所以这里固定 `setuptools<81`。
+> 如果环境已经是新版 setuptools，执行
+> `pip install "setuptools<81"` 即可。
 
 CPU 环境把 PyTorch 和 MMCV 的索引换成：
 

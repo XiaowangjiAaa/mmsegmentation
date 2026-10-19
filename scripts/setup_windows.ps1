@@ -152,7 +152,7 @@ if (-not $DryRun) {
 
 # ------------------------------------------------------------------ packages
 Invoke-Python 'Upgrade pip / setuptools / wheel' @(
-    '-m', 'pip', 'install', '--upgrade', 'pip', 'setuptools', 'wheel')
+    '-m', 'pip', 'install', '--upgrade', 'pip', 'wheel', 'setuptools<81')
 
 Invoke-Python 'Install numpy / opencv (pinned)' @(
     '-m', 'pip', 'install', 'numpy==1.26.4',

@@ -10,6 +10,7 @@ known-good stack for this repository:
 | MMCV | 2.1.0 (prebuilt wheel) |
 | MMEngine | 0.10.7 |
 | MMDetection / MMPretrain | 3.3.0 / 1.2.0 (ConvNeXt, Mask2Former) |
+| setuptools | `<81` (torch still imports `pkg_resources`) |
 | MMSegmentation | this checkout, editable |
 | NumPy | 1.26.4 |
 | OpenCV | 4.8.1.78 |
@@ -96,6 +97,9 @@ sudo apt-get install -y libgl1 libglib2.0-0
 - The scripts pin MMCV 2.1.0 because it is the last release compatible with
   MMSegmentation 1.2.2 (`mmcv>=2.0.0rc4,<2.2.0`) and has prebuilt wheels for
   PyTorch 2.1.0 on Windows and Linux.
+- `setuptools` is pinned to `<81`: newer releases removed `pkg_resources`,
+  which `torch.utils.cpp_extension` still imports through
+  `mmengine.collect_env`.
 - `conda` may ask you to accept the Anaconda Terms of Service on first use
   (`conda tos accept`); alternatively install the environment with a venv by
   ensuring Python 3.10/3.11 is on `PATH` and conda is not.

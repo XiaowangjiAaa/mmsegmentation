@@ -43,6 +43,7 @@ def main():
     sys.path.insert(0, str(REPO_ROOT))
 
     import numpy
+    import setuptools
     import torch
     import mmcv
     import mmengine
@@ -53,7 +54,15 @@ def main():
     print(f'torch      : {torch.__version__}')
     print(f'mmcv       : {mmcv.__version__}')
     print(f'mmengine   : {mmengine.__version__}')
+    print(f'setuptools : {setuptools.__version__}')
     print(f'mmseg      : {mmseg.__version__} ({Path(mmseg.__file__).parent})')
+    try:
+        import pkg_resources  # noqa: F401
+    except ImportError:
+        raise SystemExit(
+            'setuptools>=81 removed pkg_resources, but '
+            'torch.utils.cpp_extension still imports it. '
+            'Run: pip install "setuptools<81"')
     print(f'cuda avail : {torch.cuda.is_available()}')
     if torch.cuda.is_available():
         print(f'cuda       : {torch.version.cuda} | '
