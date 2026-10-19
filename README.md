@@ -349,6 +349,11 @@ mask 损失缩放为 `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`，
 UPerNet/FCN 辅助头保留 CE 0.4。这样既保留稳定的像素级梯度，又让 Dice
 直接优化前景重叠。
 
+训练稳定性方面：Mask2Former 的 mask CE 在 fp16 AMP 下会出现 NaN，因此
+`batch_train.py` 对 `mask2former_r50` 自动改用 fp32；UNet-S5 要求输入宽高
+可被 16 整除，验证/测试 pipeline 已自动 pad 到 16 的倍数，指标会忽略
+padding 区域。
+
 常用参数：
 
 ```bash

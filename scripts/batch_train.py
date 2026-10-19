@@ -53,10 +53,10 @@ def parse_args():
         help='per-GPU batch size (default: 12; 0 keeps the config value)')
     parser.add_argument(
         '--amp', dest='amp', action='store_true', default=True,
-        help='enable AMP (default)')
+        help='enable AMP for all runs except Mask2Former (default)')
     parser.add_argument(
         '--no-amp', dest='amp', action='store_false',
-        help='disable AMP')
+        help='disable AMP for every run')
     parser.add_argument(
         '--work-root', default='work_dirs/crack_batch',
         help='root directory for work dirs and logs')
@@ -125,7 +125,9 @@ def select_runs(args):
 
 def build_command(args, config, work_dir):
     cmd = [args.python, 'tools/train.py', config, '--work-dir', str(work_dir)]
-    if args.amp:
+    # Mask2Former's mask CE becomes NaN under fp16 AMP in this setup; keep it
+    # in fp32.  Other algorithms still use AMP.
+    if args.amp and 'mask2former' not in Path(config).stem:
         cmd.append('--amp')
     cfg_options = []
     if args.batch_size > 0:

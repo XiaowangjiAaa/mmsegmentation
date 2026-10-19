@@ -22,6 +22,13 @@ test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='Resize', scale=(2048, 512), keep_ratio=True),
     dict(type='LoadAnnotations', imdecode_flag='grayscale'),
+    # UNet-S5 needs both sides divisible by 16.  Non-square images such as
+    # 512x910 are padded to 512x912; the seg padding value 255 is ignored by
+    # the metric.
+    dict(
+        type='Pad',
+        size_divisor=16,
+        pad_val=dict(img=0, seg=255)),
     dict(type='PackSegInputs')
 ]
 

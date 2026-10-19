@@ -104,7 +104,7 @@ scripts\batch_train.bat --gpus 0,1
 | --- | --- |
 | `--gpus 0,1` | 使用的 GPU，默认 `0,1` |
 | `--batch-size 12` | 每卡 batch，默认 12；`0` 表示沿用配置 |
-| `--no-amp` | 关闭 AMP（默认开启） |
+| `--no-amp` | 关闭所有算法的 AMP（默认仅 Mask2Former 使用 fp32） |
 | `--only convnext_tiny,unet_s5` | 只跑指定算法 |
 | `--skip mask2former_r50` | 跳过指定算法 |
 | `--stop-on-failure` | 某个算法失败后停止整个队列 |
@@ -193,6 +193,17 @@ work_dirs/crack_batch/
 
 TensorBoard event 文件默认不生成（使用 `LocalVisBackend`）；如果需要在
 TensorBoard 中看曲线，可以再加 `TensorboardVisBackend`。
+
+## 已知训练问题
+
+- **Mask2Former-R50**：fp16 AMP 下 mask CE 会出现 `NaN`，随后 Hungarian
+  assigner 报 `ValueError: cost matrix is infeasible`。`batch_train.py`
+  会自动对 `mask2former_r50` 不传 `--amp`，即用 fp32 训练；其他算法仍用
+  AMP。单独运行 `tools/train.py` 时也不要加 `--amp`。
+- **UNet-S5**：backbone 要求输入宽高都能被 16 整除。验证/测试的图会按
+  `Resize(keep_ratio=True)` 变成类似 `512×910`，因此 `test_pipeline` 里
+  已加 `Pad(size_divisor=16)`，会 pad 到 `512×912`；`seg` 的 padding 值
+  是 255，指标会自动忽略。其他模型不受影响。
 
 > 注意：`convnext_tiny` 和 `mask2former_r50` 依赖 `mmpretrain` / `mmdet`，
 > 一键环境脚本已经安装；手动安装时执行
