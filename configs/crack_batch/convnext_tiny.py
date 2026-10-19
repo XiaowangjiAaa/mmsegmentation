@@ -22,7 +22,18 @@ model = dict(
         in_channels=[96, 192, 384, 768],
         num_classes=2,
         out_channels=2,
-        loss_decode=dict(avg_non_ignore=True)),
+        loss_decode=[
+            dict(
+                type='CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=0.5,
+                avg_non_ignore=True),
+            dict(
+                type='DiceLoss',
+                use_sigmoid=False,
+                loss_weight=1.0,
+                ignore_index=255)
+        ]),
     auxiliary_head=dict(
         in_channels=384,
         num_classes=2,

@@ -37,7 +37,7 @@ model = {
         'in_channels': [256, 512, 1024, 2048],
         'loss_cls': {
             'class_weight': [1.0, 1.0, 0.1],
-            'loss_weight': 2.0,
+            'loss_weight': 1.0,
             'reduction': 'mean',
             'type': 'mmdet.CrossEntropyLoss',
             'use_sigmoid': False
@@ -45,14 +45,14 @@ model = {
         'loss_dice': {
             'activate': True,
             'eps': 1.0,
-            'loss_weight': 5.0,
+            'loss_weight': 1.0,
             'naive_dice': True,
             'reduction': 'mean',
             'type': 'mmdet.DiceLoss',
             'use_sigmoid': True
         },
         'loss_mask': {
-            'loss_weight': 5.0,
+            'loss_weight': 0.5,
             'reduction': 'mean',
             'type': 'mmdet.CrossEntropyLoss',
             'use_sigmoid': True

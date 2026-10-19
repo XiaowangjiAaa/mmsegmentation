@@ -30,6 +30,31 @@
 - checkpoint：只保留 `mIoU` 最优的 `best_mIoU_iter_*.pth`
   （`save_last=False`，不写 `iter_*.pth` / `last.pth`）。
 
+## 损失函数
+
+抽样 500 张 mask，裂缝像素平均占比约 **1.73%**、中位数 **1.20%**，
+背景:裂缝约 **57:1**。纯 CrossEntropy 会被背景主导，因此所有算法的主分割
+损失统一为：
+
+```text
+CrossEntropyLoss  0.5
+DiceLoss          1.0
+```
+
+具体实现：
+
+- ConvNeXt-T、DeepLabV3+ R18、SegFormer B0、SegNeXt-T、Swin-T、
+  Twins PCPVT-S、UNet-S5：`decode_head.loss_decode` 为
+  `[CE(0.5), Dice(1.0)]`；
+- EfficientViT-B0：同样是 `[CE(0.5), Dice(1.0)]`；
+- Mask2Former-R50：使用其解码器原生损失，缩放为
+  `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`；
+- UPerNet / FCN 的辅助头保持 `CrossEntropyLoss=0.4`，作为深监督，
+  不参与主损失的统一。
+
+CE 均保留 `avg_non_ignore=True`；Dice 使用 `use_sigmoid=False` 和
+`ignore_index=255`，适配 2 类 softmax 输出。
+
 ## 预训练权重
 
 除 UNet 外，所有配置都会加载原始 MMSeg 配置中的预训练权重：

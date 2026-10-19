@@ -49,12 +49,20 @@ model = {
         },
         'in_channels': [64, 160, 256],
         'in_index': [1, 2, 3],
-        'loss_decode': {
-            'avg_non_ignore': True,
-            'loss_weight': 1.0,
-            'type': 'CrossEntropyLoss',
-            'use_sigmoid': False
-        },
+        'loss_decode': [
+            {
+                'avg_non_ignore': True,
+                'loss_weight': 0.5,
+                'type': 'CrossEntropyLoss',
+                'use_sigmoid': False
+            },
+            {
+                'ignore_index': 255,
+                'loss_weight': 1.0,
+                'type': 'DiceLoss',
+                'use_sigmoid': False
+            }
+        ],
         'norm_cfg': {
             'num_groups': 32,
             'requires_grad': True,

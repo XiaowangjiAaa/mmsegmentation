@@ -343,6 +343,12 @@ MMSeg 配置中的 ImageNet / 骨干权重。EfficientViT-B0 使用官方 Citysc
 python scripts/prepare_efficientvit_b0.py
 ```
 
+损失函数方面，针对裂缝像素占比低（抽样均值约 1.73%，背景:裂缝约 57:1），
+9 个算法的主分割损失统一为 **CE 0.5 + Dice 1.0**；Mask2Former 按其原生
+mask 损失缩放为 `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`，
+UPerNet/FCN 辅助头保留 CE 0.4。这样既保留稳定的像素级梯度，又让 Dice
+直接优化前景重叠。
+
 常用参数：
 
 ```bash

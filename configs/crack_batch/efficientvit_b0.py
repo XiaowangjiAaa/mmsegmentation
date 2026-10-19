@@ -18,8 +18,12 @@ model = dict(
                 type='CrossEntropyLoss',
                 use_sigmoid=False,
                 avg_non_ignore=True,
-                loss_weight=1.0),
-            dict(type='DiceLoss', use_sigmoid=False, loss_weight=1.0)
+                loss_weight=0.5),
+            dict(
+                type='DiceLoss',
+                use_sigmoid=False,
+                loss_weight=1.0,
+                ignore_index=255)
         ]),
     test_cfg=dict(mode='whole'))
 
