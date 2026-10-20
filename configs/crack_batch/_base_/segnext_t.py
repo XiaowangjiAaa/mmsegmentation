@@ -52,15 +52,17 @@ model = {
         'loss_decode': [
             {
                 'avg_non_ignore': True,
+                'class_weight': [1.0, 10.0],
                 'loss_weight': 0.5,
                 'type': 'CrossEntropyLoss',
                 'use_sigmoid': False
             },
             {
+                'alpha': 0.3,
+                'beta': 0.7,
                 'ignore_index': 255,
-                'loss_weight': 1.0,
-                'type': 'DiceLoss',
-                'use_sigmoid': False
+                'loss_weight': 2.0,
+                'type': 'TverskyLoss'
             }
         ],
         'norm_cfg': {

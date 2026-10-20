@@ -6,7 +6,8 @@ _base_ = [
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
-        type='AdamW', lr=0.00006, betas=(0.9, 0.999), weight_decay=0.01),
+        type='AdamW', lr=0.00003, betas=(0.9, 0.999), weight_decay=0.01),
+    clip_grad=dict(max_norm=1.0, norm_type=2),
     paramwise_cfg=dict(
         custom_keys={
             'pos_block': dict(decay_mult=0.),

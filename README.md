@@ -344,10 +344,11 @@ python scripts/prepare_efficientvit_b0.py
 ```
 
 损失函数方面，针对裂缝像素占比低（抽样均值约 1.73%，背景:裂缝约 57:1），
-9 个算法的主分割损失统一为 **CE 0.5 + Dice 1.0**；Mask2Former 按其原生
-mask 损失缩放为 `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`，
-UPerNet/FCN 辅助头保留 CE 0.4。这样既保留稳定的像素级梯度，又让 Dice
-直接优化前景重叠。
+除 SegNeXt-T 外的算法主分割损失统一为 **CE 0.5 + Dice 1.0**；Mask2Former
+按其原生 mask 损失缩放为 `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`，
+UPerNet/FCN 辅助头保留 CE 0.4。SegNeXt-T 之前的 CE+Dice 退化成全背景，
+现改为 `CE(class_weight=[1,10]) + Tversky(alpha=0.3, beta=0.7)`，并降低
+LR、加梯度裁剪，需要重新训练。
 
 训练稳定性方面：Mask2Former 的 mask CE 在 fp16 AMP 下会出现 NaN，因此
 `batch_train.py` 对 `mask2former_r50` 自动改用 fp32；UNet-S5 要求输入宽高

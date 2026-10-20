@@ -33,8 +33,8 @@
 ## 损失函数
 
 抽样 500 张 mask，裂缝像素平均占比约 **1.73%**、中位数 **1.20%**，
-背景:裂缝约 **57:1**。纯 CrossEntropy 会被背景主导，因此所有算法的主分割
-损失统一为：
+背景:裂缝约 **57:1**。纯 CrossEntropy 会被背景主导。除 SegNeXt-T 外，
+主分割损失统一为：
 
 ```text
 CrossEntropyLoss  0.5
@@ -43,17 +43,20 @@ DiceLoss          1.0
 
 具体实现：
 
-- ConvNeXt-T、DeepLabV3+ R18、SegFormer B0、SegNeXt-T、Swin-T、
-  Twins PCPVT-S、UNet-S5：`decode_head.loss_decode` 为
-  `[CE(0.5), Dice(1.0)]`；
+- ConvNeXt-T、DeepLabV3+ R18、SegFormer B0、Swin-T、Twins PCPVT-S、
+  UNet-S5：`decode_head.loss_decode` 为 `[CE(0.5), Dice(1.0)]`；
 - EfficientViT-B0：同样是 `[CE(0.5), Dice(1.0)]`；
+- **SegNeXt-T**：之前的 `[CE, Dice]` 训练退化成全背景，现改为
+  `CE(0.5, class_weight=[1.0, 10.0]) + Tversky(alpha=0.3, beta=0.7,
+  loss_weight=2.0)`，同时 LR 从 `6e-5` 降到 `3e-5`，并加 `clip_grad=1.0`；
 - Mask2Former-R50：使用其解码器原生损失，缩放为
   `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`；
 - UPerNet / FCN 的辅助头保持 `CrossEntropyLoss=0.4`，作为深监督，
   不参与主损失的统一。
 
-CE 均保留 `avg_non_ignore=True`；Dice 使用 `use_sigmoid=False` 和
-`ignore_index=255`，适配 2 类 softmax 输出。
+普通 CE 保留 `avg_non_ignore=True`；Dice 使用 `use_sigmoid=False` 和
+`ignore_index=255`；SegNeXt 的 Tversky 使用 `alpha=0.3, beta=0.7`，
+更重地惩罚漏检（FN）。
 
 ## 预训练权重
 
@@ -204,6 +207,9 @@ TensorBoard 中看曲线，可以再加 `TensorboardVisBackend`。
   `Resize(keep_ratio=True)` 变成类似 `512×910`，因此 `test_pipeline` 里
   已加 `Pad(size_divisor=16)`，会 pad 到 `512×912`；`seg` 的 padding 值
   是 255，指标会自动忽略。其他模型不受影响。
+- **SegNeXt-T**：旧配置在 40k 内始终输出全背景（`IoU/crack=0`）。现已
+  改为 Tversky + 前景 class weight 并降低 LR；需要用新配置重新训练后再
+  评估，旧 `best_mIoU_iter_1000.pth` 不要继续使用。
 
 > 注意：`convnext_tiny` 和 `mask2former_r50` 依赖 `mmpretrain` / `mmdet`，
 > 一键环境脚本已经安装；手动安装时执行
