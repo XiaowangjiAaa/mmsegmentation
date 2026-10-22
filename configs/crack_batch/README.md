@@ -47,8 +47,11 @@ DiceLoss          1.0
   UNet-S5：`decode_head.loss_decode` 为 `[CE(0.5), Dice(1.0)]`；
 - EfficientViT-B0：同样是 `[CE(0.5), Dice(1.0)]`；
 - **SegNeXt-T**：之前的 `[CE, Dice]` 训练退化成全背景，现改为
-  `CE(0.5, class_weight=[1.0, 10.0]) + Tversky(alpha=0.3, beta=0.7,
-  loss_weight=2.0)`，同时 LR 从 `6e-5` 降到 `3e-5`，并加 `clip_grad=1.0`；
+  `CE(0.5) + Tversky(alpha=0.3, beta=0.7, loss_weight=2.0)`，同时 LR 从
+  `6e-5` 降到 `3e-5`，并加 `clip_grad=1.0`。CE 的
+  `class_weight=[1,10]` 已移除：mmseg 的 CE 会在 ignore label 上索引
+  class_weight 越界并触发 CUDA device-side assert；前景改由 Tversky 的
+  `beta>alpha` 强调；
 - Mask2Former-R50：使用其解码器原生损失，缩放为
   `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`；
 - UPerNet / FCN 的辅助头保持 `CrossEntropyLoss=0.4`，作为深监督，
@@ -208,8 +211,10 @@ TensorBoard 中看曲线，可以再加 `TensorboardVisBackend`。
   已加 `Pad(size_divisor=16)`，会 pad 到 `512×912`；`seg` 的 padding 值
   是 255，指标会自动忽略。其他模型不受影响。
 - **SegNeXt-T**：旧配置在 40k 内始终输出全背景（`IoU/crack=0`）。现已
-  改为 Tversky + 前景 class weight 并降低 LR；需要用新配置重新训练后再
-  评估，旧 `best_mIoU_iter_1000.pth` 不要继续使用。
+  改为 `CE(0.5) + Tversky(alpha=0.3, beta=0.7, loss_weight=2.0)` 并降低
+  LR；需要重新训练后再评估，旧 `best_mIoU_iter_1000.pth` 不要继续使用。
+  CE 的 `class_weight` 已移除，因为 mmseg 的 CE 实现会在 ignore label 上
+  索引 class_weight 越界并触发 CUDA device-side assert。
 
 > 注意：`convnext_tiny` 和 `mask2former_r50` 依赖 `mmpretrain` / `mmdet`，
 > 一键环境脚本已经安装；手动安装时执行

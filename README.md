@@ -347,8 +347,9 @@ python scripts/prepare_efficientvit_b0.py
 除 SegNeXt-T 外的算法主分割损失统一为 **CE 0.5 + Dice 1.0**；Mask2Former
 按其原生 mask 损失缩放为 `loss_cls=1.0`、`loss_mask=0.5`、`loss_dice=1.0`，
 UPerNet/FCN 辅助头保留 CE 0.4。SegNeXt-T 之前的 CE+Dice 退化成全背景，
-现改为 `CE(class_weight=[1,10]) + Tversky(alpha=0.3, beta=0.7)`，并降低
-LR、加梯度裁剪，需要重新训练。
+现改为 `CE(0.5) + Tversky(alpha=0.3, beta=0.7, loss_weight=2.0)`，并降低
+LR、加梯度裁剪，需要重新训练。CE 的 `class_weight` 已移除，因为 mmseg
+会在 ignore label 上索引 class_weight 越界并触发 CUDA device-side assert。
 
 训练稳定性方面：Mask2Former 的 mask CE 在 fp16 AMP 下会出现 NaN，因此
 `batch_train.py` 对 `mask2former_r50` 自动改用 fp32；UNet-S5 要求输入宽高

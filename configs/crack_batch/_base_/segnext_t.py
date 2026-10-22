@@ -52,7 +52,6 @@ model = {
         'loss_decode': [
             {
                 'avg_non_ignore': True,
-                'class_weight': [1.0, 10.0],
                 'loss_weight': 0.5,
                 'type': 'CrossEntropyLoss',
                 'use_sigmoid': False
