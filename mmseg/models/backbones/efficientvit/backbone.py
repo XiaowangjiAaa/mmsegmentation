@@ -17,7 +17,8 @@ import torch.nn as nn
 from mmengine.model import BaseModule
 
 from mmseg.registry import MODELS
-from .layers import (ConvLayer, DSConv, EfficientViTBlock, FusedMBConv,
+from .attn_plugins import build_efficientvit_block
+from .layers import (ConvLayer, DSConv, FusedMBConv,
                      IdentityLayer, MBConv, OpSequential, ResBlock,
                      ResidualBlock)
 
@@ -90,6 +91,8 @@ class EfficientViT(BaseModule):
                  out_indices: Sequence[int] = (0, 1, 2, 3),
                  norm_cfg: Optional[dict] = dict(type='BN'),
                  act_cfg: Optional[dict] = None,
+                 block_type: str = 'v1',
+                 attn_kwargs: Optional[dict] = None,
                  init_cfg: Optional[dict] = None):
         super().__init__(init_cfg=init_cfg)
         assert arch in self.arch_settings, \
@@ -100,6 +103,8 @@ class EfficientViT(BaseModule):
 
         setting = self.arch_settings[arch]
         self.arch = arch
+        self.block_type = block_type
+        self.attn_kwargs = dict(attn_kwargs or {})
         self.is_large = setting['large']
         self.out_indices = tuple(out_indices)
         self.width_list: List[int] = []
@@ -182,7 +187,8 @@ class EfficientViT(BaseModule):
             self.width_list.append(in_channels)
 
         # stages with linear-attention blocks
-        for w, d in zip(width_list[3:], depth_list[3:]):
+        for stage_idx, (w, d) in enumerate(
+                zip(width_list[3:], depth_list[3:]), start=2):
             stage = []
             block = self._build_local_block(
                 in_channels=in_channels,
@@ -196,12 +202,15 @@ class EfficientViT(BaseModule):
             in_channels = w
             for _ in range(d):
                 stage.append(
-                    EfficientViTBlock(
+                    build_efficientvit_block(
+                        self.block_type,
                         in_channels=in_channels,
                         dim=dim,
                         expand_ratio=4,
                         norm=norm_cfg,
-                        act_func=act_cfg))
+                        act_func=act_cfg,
+                        stage_idx=stage_idx,
+                        **self.attn_kwargs))
             stages.append(OpSequential(stage))
             self.width_list.append(in_channels)
 
@@ -276,12 +285,15 @@ class EfficientViT(BaseModule):
             in_channels = w
             for _ in range(d):
                 stage.append(
-                    EfficientViTBlock(
+                    build_efficientvit_block(
+                        self.block_type,
                         in_channels=in_channels,
                         dim=qkv_dim,
                         expand_ratio=6,
                         norm=norm_cfg,
-                        act_func=act_cfg))
+                        act_func=act_cfg,
+                        stage_idx=4,
+                        **self.attn_kwargs))
             stages.append(OpSequential(stage))
             self.width_list.append(in_channels)
 

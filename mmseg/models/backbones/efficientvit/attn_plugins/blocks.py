@@ -1,0 +1,167 @@
+"""EfficientViT blocks with optional lightweight attention plugins."""
+from typing import Optional
+
+import torch
+import torch.nn as nn
+
+from ..layers import EfficientViTBlock
+from .modules import CoordAttention, EdgeGate, ResidualGlobalAttention, \
+    ResidualWindowAttention
+
+
+class EfficientViTBlockCoord(EfficientViTBlock):
+    """LiteMLA -> coordinate attention -> MBConv."""
+
+    def __init__(self,
+                 in_channels: int,
+                 dim: int = 32,
+                 expand_ratio: float = 4,
+                 norm: dict = dict(type='BN'),
+                 act_func='hswish',
+                 stage_idx: int = 2,
+                 coord_reduction: int = 32,
+                 **kwargs):
+        super().__init__(
+            in_channels=in_channels,
+            dim=dim,
+            expand_ratio=expand_ratio,
+            norm=norm,
+            act_func=act_func,
+            **kwargs)
+        self.coord = CoordAttention(
+            in_channels,
+            reduction=coord_reduction,
+            norm_cfg=norm or dict(type='BN'),
+            act_cfg=act_func)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.context_module(x)
+        x = self.coord(x)
+        x = self.local_module(x)
+        return x
+
+
+class EfficientViTBlockHybrid(EfficientViTBlock):
+    """Stage 3: global attention + edge gate; stage 2: coordinate attention."""
+
+    def __init__(self,
+                 in_channels: int,
+                 dim: int = 32,
+                 expand_ratio: float = 4,
+                 norm: dict = dict(type='BN'),
+                 act_func='hswish',
+                 stage_idx: int = 2,
+                 global_stage: int = 3,
+                 coord_stage: int = 2,
+                 use_edge: bool = True,
+                 attn_dim: Optional[int] = None,
+                 num_heads: int = 4,
+                 edge_kernel: int = 7,
+                 **kwargs):
+        super().__init__(
+            in_channels=in_channels,
+            dim=dim,
+            expand_ratio=expand_ratio,
+            norm=norm,
+            act_func=act_func,
+            **kwargs)
+        self.global_attn = (
+            ResidualGlobalAttention(
+                in_channels,
+                attn_dim=attn_dim,
+                num_heads=num_heads) if stage_idx >= global_stage else None)
+        self.coord = (
+            CoordAttention(
+                in_channels,
+                norm_cfg=norm or dict(type='BN'),
+                act_cfg=act_func) if stage_idx == coord_stage else None)
+        self.edge = (
+            EdgeGate(
+                in_channels,
+                kernel_size=edge_kernel,
+                norm_cfg=norm or dict(type='BN'),
+                act_cfg=act_func) if use_edge and stage_idx >= global_stage
+            else None)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.context_module(x)
+        if self.global_attn is not None:
+            x = self.global_attn(x)
+        if self.coord is not None:
+            x = self.coord(x)
+        x = self.local_module(x)
+        if self.edge is not None:
+            x = self.edge(x)
+        return x
+
+
+class EfficientViTBlockWindow(EfficientViTBlock):
+    """LiteMLA -> local window attention -> optional edge gate -> MBConv."""
+
+    def __init__(self,
+                 in_channels: int,
+                 dim: int = 32,
+                 expand_ratio: float = 4,
+                 norm: dict = dict(type='BN'),
+                 act_func='hswish',
+                 stage_idx: int = 2,
+                 window_size: int = 8,
+                 coord_stage: int = 2,
+                 use_edge: bool = True,
+                 attn_dim: Optional[int] = None,
+                 num_heads: int = 4,
+                 edge_kernel: int = 7,
+                 **kwargs):
+        super().__init__(
+            in_channels=in_channels,
+            dim=dim,
+            expand_ratio=expand_ratio,
+            norm=norm,
+            act_func=act_func,
+            **kwargs)
+        self.window_attn = ResidualWindowAttention(
+            in_channels,
+            window_size=window_size,
+            attn_dim=attn_dim,
+            num_heads=num_heads)
+        self.coord = (
+            CoordAttention(
+                in_channels,
+                norm_cfg=norm or dict(type='BN'),
+                act_cfg=act_func) if stage_idx == coord_stage else None)
+        self.edge = (
+            EdgeGate(
+                in_channels,
+                kernel_size=edge_kernel,
+                norm_cfg=norm or dict(type='BN'),
+                act_cfg=act_func) if use_edge and stage_idx >= 3 else None)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.context_module(x)
+        x = self.window_attn(x)
+        if self.coord is not None:
+            x = self.coord(x)
+        x = self.local_module(x)
+        if self.edge is not None:
+            x = self.edge(x)
+        return x
+
+
+def build_efficientvit_block(block_type: str = 'v1', **kwargs):
+    """Build a standard or plugin EfficientViT block.
+
+    ``stage_idx`` is consumed by the plugin classes and is ignored by the
+    original ``EfficientViTBlock``.
+    """
+    stage_idx = kwargs.pop('stage_idx', 2)
+    if block_type in (None, 'v1', 'baseline'):
+        return EfficientViTBlock(**kwargs)
+    if block_type == 'coord':
+        return EfficientViTBlockCoord(stage_idx=stage_idx, **kwargs)
+    if block_type == 'hybrid':
+        return EfficientViTBlockHybrid(stage_idx=stage_idx, **kwargs)
+    if block_type == 'window':
+        return EfficientViTBlockWindow(stage_idx=stage_idx, **kwargs)
+    raise ValueError(
+        f'Unknown EfficientViT block_type {block_type!r}; '
+        "expected one of 'v1', 'coord', 'hybrid', 'window'")
