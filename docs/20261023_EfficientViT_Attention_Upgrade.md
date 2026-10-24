@@ -554,11 +554,89 @@ backbone=dict(type='EfficientViT', arch='b0')
 
 ---
 
-## 10. 当前状态
+## 10. 首轮 40k 结果（2026-10-24）
+
+三个变体均已完成 40k 训练（验证集 1208 张，512×512，fp32）：
+
+| 模型 | best iter | mIoU | mDice | IoU/crack | Dice/crack | F1/crack | Precision/crack | Recall/crack |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline B0（AMP） | 38k | **80.74** | **88.18** | **62.28** | **76.76** | **76.76** | 76.05 | 77.47 |
+| V1 coord | 40k | 80.42 | 87.93 | 61.65 | 76.28 | 76.28 | 76.10 | 76.46 |
+| V2 hybrid | 38k | 80.65 | 88.11 | 62.10 | 76.62 | 76.62 | 76.88 | 76.35 |
+| V3 window | 34k | 80.46 | 87.97 | 61.74 | 76.35 | 76.35 | 74.76 | 78.01 |
+
+相对 baseline 的裂缝 IoU：
+
+```text
+V1 coord : -0.63
+V2 hybrid: -0.18
+V3 window: -0.54
+```
+
+### 结论
+
+- **本轮三个 attention 变体都没有超过 baseline**；
+- hybrid 最接近（-0.18 IoU），但仍在验证噪声量级内；
+- coord/window 反而更低；
+- 新增参数量/FLOPs 没有换来 mIoU 提升，**当前版本不建议直接替换 baseline**。
+
+### 重要对照问题
+
+baseline 是之前用 **AMP** 训练的，而三个变体是 **fp32** 训练，二者不是严格同精度对照。
+要下定论，需要补一个 **fp32 baseline** 对照：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0 --variants baseline --batch-size 12
+```
+
+如果 fp32 baseline 本身低于 62.28，那么 hybrid/coord 可能只是与它持平；如果 fp32
+baseline 仍接近 62.28，则说明当前 attention 改造确实没有收益。
+
+### 门控是否生效
+
+从 best checkpoint 读取 `gamma`：
+
+```text
+coord:
+  stage2: 0.126 / 0.135
+  stage3: 0.230 / 0.243
+
+hybrid:
+  stage2 coord: 0.126 / 0.157
+  stage3 global: -0.018 / -0.101
+  stage3 edge: 0.582 / 0.905
+
+window:
+  stage2 window: -0.152 / -0.137
+  stage2 coord: 0.097 / 0.141
+  stage3 window: -0.073 / 0.079
+  stage3 edge: 0.582 / -1.338
+```
+
+说明：
+
+- `gamma` 明显离开 0，**attention 分支确实在工作**，不是“模块没被训练”；
+- hybrid 的 edge gate 学得很大（0.58–0.91），但精度没有提升，说明方向/边缘特征
+  可能与已有 MBConv 冗余，或在小数据上过拟合；
+- global attention 的 gamma 很小甚至为负，说明 stage 3 已有 LiteMLA 的情况下，
+  再叠加全局注意力收益有限。
+
+### 下一步建议
+
+1. **先补 fp32 baseline**，确认精度对照；
+2. 当前 backbone attention 方向不做直接替换；
+3. 如果继续，优先改 **SegHead / 高分辨率特征融合**，而不是继续加深 backbone attention；
+4. 可尝试把 DEGConv/EdgeGate 放到 **SegHead 融合之后**，而不是 backbone stage 3；
+5. 增加随机种子重复，确认 0.2–0.6 IoU 的差异是否只是验证噪声。
+
+---
+
+## 11. 当前状态
 
 - 代码：已实现并通过 `py_compile`；
 - 构建：3 个新配置均能 `MODELS.build()`；
 - smoke：coord / hybrid / window 均完成 1–2 iter 前向/反向；
-- 参数量：V1 0.7138M、V2 0.8283M、V3 0.8593M；
-- 尚未进行 40k 正式训练，因此**没有新的 mIoU 数字**；
-- 下一步：先跑 V1，再跑 V2/V3，按第 6 节判断是否继续扩展。
+- 正式训练：三个变体均完成 40k；
+- 结果：未超过 baseline，当前版本保留作对照，不推荐直接采用；
+- 下一步：补 fp32 baseline，再决定是否改 SegHead 或停止该方向。
