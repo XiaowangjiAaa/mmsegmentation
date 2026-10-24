@@ -4,7 +4,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from ..layers import EfficientViTBlock
+from ..layers import EfficientViTBlock, IdentityLayer, ResidualBlock
 from .modules import CoordAttention, EdgeGate, ResidualGlobalAttention, \
     ResidualWindowAttention
 
@@ -147,6 +147,66 @@ class EfficientViTBlockWindow(EfficientViTBlock):
         return x
 
 
+class EfficientViTBlockReplace(EfficientViTBlock):
+    """Replace LiteMLA in *every* context block with a token mixer.
+
+    Unlike the additive variants, this version removes LiteMLA completely.
+    ``mixer_type`` can be ``window``, ``global`` or ``hybrid``; hybrid uses
+    window attention at stage 2 and global attention at stage 3.
+    """
+
+    def __init__(self,
+                 in_channels: int,
+                 dim: int = 32,
+                 expand_ratio: float = 4,
+                 norm: dict = dict(type='BN'),
+                 act_func='hswish',
+                 stage_idx: int = 2,
+                 mixer_type: str = 'window',
+                 attn_dim: Optional[int] = None,
+                 num_heads: int = 4,
+                 window_size: int = 8,
+                 **kwargs):
+        super().__init__(
+            in_channels=in_channels,
+            dim=dim,
+            expand_ratio=expand_ratio,
+            norm=norm,
+            act_func=act_func,
+            **kwargs)
+        if mixer_type == 'global':
+            mixer = ResidualGlobalAttention(
+                in_channels,
+                attn_dim=attn_dim,
+                num_heads=num_heads,
+                residual=False)
+        elif mixer_type == 'window':
+            mixer = ResidualWindowAttention(
+                in_channels,
+                window_size=window_size,
+                attn_dim=attn_dim,
+                num_heads=num_heads,
+                residual=False)
+        elif mixer_type == 'hybrid':
+            if stage_idx >= 3:
+                mixer = ResidualGlobalAttention(
+                    in_channels,
+                    attn_dim=attn_dim,
+                    num_heads=num_heads,
+                    residual=False)
+            else:
+                mixer = ResidualWindowAttention(
+                    in_channels,
+                    window_size=window_size,
+                    attn_dim=attn_dim,
+                    num_heads=num_heads,
+                    residual=False)
+        else:
+            raise ValueError(f'Unknown mixer_type: {mixer_type}')
+        # Replace the LiteMLA context module; MBConv local module is unchanged.
+        self.context_module = ResidualBlock(mixer, IdentityLayer())
+
+
 def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     """Build a standard or plugin EfficientViT block.
 
@@ -162,6 +222,16 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
         return EfficientViTBlockHybrid(stage_idx=stage_idx, **kwargs)
     if block_type == 'window':
         return EfficientViTBlockWindow(stage_idx=stage_idx, **kwargs)
+    if block_type == 'replace_window':
+        return EfficientViTBlockReplace(
+            stage_idx=stage_idx, mixer_type='window', **kwargs)
+    if block_type == 'replace_global':
+        return EfficientViTBlockReplace(
+            stage_idx=stage_idx, mixer_type='global', **kwargs)
+    if block_type == 'replace_hybrid':
+        return EfficientViTBlockReplace(
+            stage_idx=stage_idx, mixer_type='hybrid', **kwargs)
     raise ValueError(
         f'Unknown EfficientViT block_type {block_type!r}; '
-        "expected one of 'v1', 'coord', 'hybrid', 'window'")
+        "expected one of 'v1', 'coord', 'hybrid', 'window', "
+        "'replace_window', 'replace_global', 'replace_hybrid'")

@@ -23,6 +23,15 @@ VARIANTS = {
     'window':
     'configs/efficientvit_attn_20261023/'
     'efficientvit-b0-window_crack-512x512.py',
+    'replace_window':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-replace-window_crack-512x512.py',
+    'replace_global':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-replace-global_crack-512x512.py',
+    'replace_hybrid':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-replace-hybrid_crack-512x512.py',
 }
 
 
@@ -30,8 +39,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--variants',
-        default='coord,hybrid,window',
-        help='comma separated: baseline,coord,hybrid,window')
+        default='replace_hybrid,replace_window,replace_global',
+        help='comma separated: baseline,coord,hybrid,window, '
+        'replace_window,replace_global,replace_hybrid')
     parser.add_argument('--gpus', default='0', help='CUDA_VISIBLE_DEVICES')
     parser.add_argument('--batch-size', type=int, default=12)
     parser.add_argument(

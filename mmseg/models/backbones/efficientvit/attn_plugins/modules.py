@@ -128,7 +128,8 @@ class ResidualGlobalAttention(nn.Module):
                  channels: int,
                  attn_dim: Optional[int] = None,
                  num_heads: int = 4,
-                 gamma_init: float = 0.0):
+                 gamma_init: float = 0.0,
+                 residual: bool = True):
         super().__init__()
         attn_dim = attn_dim or max(32, channels // 2)
         attn_dim = max(num_heads, (attn_dim // num_heads) * num_heads)
@@ -137,16 +138,19 @@ class ResidualGlobalAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = attn_dim // num_heads
         self.scale = self.head_dim**-0.5
+        self.residual = residual
 
         self.norm = nn.LayerNorm(channels)
         self.local = nn.Conv2d(
             channels, channels, 3, padding=1, groups=channels, bias=True)
         self.qkv = nn.Conv2d(channels, 3 * attn_dim, 1, bias=True)
         self.proj = nn.Conv2d(attn_dim, channels, 1, bias=True)
-        self.gamma = nn.Parameter(torch.tensor(float(gamma_init)))
+        self.gamma = (
+            nn.Parameter(torch.tensor(float(gamma_init)))
+            if residual else None)
 
     @torch.cuda.amp.autocast(enabled=False)
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def attend(self, x: torch.Tensor) -> torch.Tensor:
         dtype = x.dtype
         x = x.float()
         b, c, h, w = x.shape
@@ -164,7 +168,13 @@ class ResidualGlobalAttention(nn.Module):
         attn = torch.softmax(scores, dim=-1)
         out = torch.matmul(attn, v.transpose(-1, -2))
         out = out.transpose(-1, -2).reshape(b, self.attn_dim, h, w)
-        return (x + self.gamma * self.proj(out)).to(dtype)
+        return self.proj(out).to(dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.attend(x)
+        if not self.residual:
+            return out
+        return x + self.gamma * out
 
 
 class ResidualWindowAttention(nn.Module):
@@ -175,7 +185,8 @@ class ResidualWindowAttention(nn.Module):
                  window_size: int = 8,
                  attn_dim: Optional[int] = None,
                  num_heads: int = 4,
-                 gamma_init: float = 0.0):
+                 gamma_init: float = 0.0,
+                 residual: bool = True):
         super().__init__()
         attn_dim = attn_dim or max(32, channels // 2)
         attn_dim = max(num_heads, (attn_dim // num_heads) * num_heads)
@@ -185,14 +196,17 @@ class ResidualWindowAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = attn_dim // num_heads
         self.scale = self.head_dim**-0.5
+        self.residual = residual
 
         self.norm = nn.LayerNorm(channels)
         self.qkv = nn.Conv2d(channels, 3 * attn_dim, 1, bias=True)
         self.proj = nn.Conv2d(attn_dim, channels, 1, bias=True)
-        self.gamma = nn.Parameter(torch.tensor(float(gamma_init)))
+        self.gamma = (
+            nn.Parameter(torch.tensor(float(gamma_init)))
+            if residual else None)
 
     @torch.cuda.amp.autocast(enabled=False)
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def attend(self, x: torch.Tensor) -> torch.Tensor:
         dtype = x.dtype
         x = x.float()
         b, c, h, w = x.shape
@@ -223,4 +237,10 @@ class ResidualWindowAttention(nn.Module):
         out = out.permute(0, 3, 1, 4, 2, 5).contiguous().view(
             b, self.attn_dim, hp, wp)
         out = out[:, :, :h, :w]
-        return (x + self.gamma * self.proj(out)).to(dtype)
+        return self.proj(out).to(dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.attend(x)
+        if not self.residual:
+            return out
+        return x + self.gamma * out

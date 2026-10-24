@@ -383,16 +383,16 @@ python scripts/efficientvit_attn_20261023/run_variants.py \
 ```bash
 python scripts/efficientvit_attn_20261023/batch_train_attn.py \
   --gpus 0,1 \
-  --variants coord,hybrid,window \
+  --variants replace_hybrid,replace_window,replace_global \
   --batch-size 12
 ```
 
 执行顺序：
 
 ```text
-GPU0: coord
-GPU1: hybrid
-GPU0 空出后: window
+GPU0: replace_hybrid
+GPU1: replace_window
+GPU0 空出后: replace_global
 ```
 
 输出：
@@ -401,19 +401,19 @@ GPU0 空出后: window
 work_dirs/efficientvit_attn_20261023/batch/
 ├── batch_summary.json
 ├── logs/
-│   ├── coord_<timestamp>.log
-│   ├── hybrid_<timestamp>.log
-│   └── window_<timestamp>.log
-├── coord/best_mIoU_iter_*.pth
-├── hybrid/best_mIoU_iter_*.pth
-└── window/best_mIoU_iter_*.pth
+│   ├── replace_hybrid_<timestamp>.log
+│   ├── replace_window_<timestamp>.log
+│   └── replace_global_<timestamp>.log
+├── replace_hybrid/best_mIoU_iter_*.pth
+├── replace_window/best_mIoU_iter_*.pth
+└── replace_global/best_mIoU_iter_*.pth
 ```
 
 单卡：
 
 ```bash
 python scripts/efficientvit_attn_20261023/batch_train_attn.py \
-  --gpus 0 --variants coord,hybrid,window
+  --gpus 0 --variants replace_hybrid,replace_window,replace_global
 ```
 
 加入 baseline 一起比较（会多跑一个 fp32 baseline）：
@@ -421,7 +421,7 @@ python scripts/efficientvit_attn_20261023/batch_train_attn.py \
 ```bash
 python scripts/efficientvit_attn_20261023/batch_train_attn.py \
   --gpus 0,1 \
-  --variants baseline,coord,hybrid,window
+  --variants baseline,replace_hybrid,replace_window,replace_global
 ```
 
 smoke test：
@@ -429,7 +429,7 @@ smoke test：
 ```bash
 python scripts/efficientvit_attn_20261023/batch_train_attn.py \
   --gpus 0 \
-  --variants coord,hybrid,window \
+  --variants replace_hybrid,replace_window,replace_global \
   --max-iters 2 \
   --batch-size 2 \
   --work-root work_dirs/attn_batch_smoke
@@ -635,8 +635,114 @@ window:
 ## 11. 当前状态
 
 - 代码：已实现并通过 `py_compile`；
-- 构建：3 个新配置均能 `MODELS.build()`；
-- smoke：coord / hybrid / window 均完成 1–2 iter 前向/反向；
-- 正式训练：三个变体均完成 40k；
-- 结果：未超过 baseline，当前版本保留作对照，不推荐直接采用；
-- 下一步：补 fp32 baseline，再决定是否改 SegHead 或停止该方向。
+- 构建：Round 1 的 3 个叠加配置 + Round 2 的 3 个全量替换配置均可
+  `MODELS.build()`；
+- smoke：Round 1 与 Round 2 的配置均完成 1–2 iter 前向/反向；
+- 正式训练：Round 1 三个叠加变体完成 40k；Round 2 全量替换尚未正式训练；
+- Round 1 结果：未超过 baseline，只作为叠加式对照；
+- 下一步：跑 Round 2 全量替换 + fp32 baseline，再决定是否改 SegHead 或停止
+  backbone attention 方向。
+
+---
+
+## 12. Round 2：全量替换 LiteMLA（真正做模块替换）
+
+### 12.1 对 Round 1 的修正
+
+Round 1 的三个版本是“保留 LiteMLA + 额外加 attention”：
+
+- `hybrid` 只在 stage 3 加了 global attention；
+- `window` 是在 LiteMLA 后追加 window attention；
+- `coord` 是追加一个 gate。
+
+这只能说明“在 LiteMLA 之上叠加 attention 没有收益”，**不能说明用新 attention
+替换 LiteMLA 没有收益**。如果目标是验证一个 attention 模块，必须在所有承担
+相同作用的位置上替换，而不是只改一个 stage 或只加一个残差分支。
+
+B0 的结构里：
+
+```text
+stage 0/1：纯 MBConv，没有 attention
+stage 2：2 个 LiteMLA
+stage 3：2 个 LiteMLA
+```
+
+所以“全部替换相似作用的部分”就是替换 **stage 2/3 的全部 4 个 LiteMLA**；
+stage 0/1 没有同类模块，不应为了“全替换”强行塞入高分辨率 attention，否则
+是另一类“新增 attention”的实验。
+
+### 12.2 全量替换协议
+
+```text
+每个 context block：
+    原：LiteMLA → MBConv
+    新：TokenMixer → MBConv
+```
+
+- 删除 LiteMLA，不再保留其分支；
+- MBConv 保持不变，隔离变量；
+- 不添加 CoordAttention / EdgeGate 等额外门控；
+- 所有 4 个 context block 使用同一种 mixer（hybrid 是 stage 2/3 两种 scope
+  的固定组合，但仍然是全部替换）。
+
+### 12.3 三个全量替换版本
+
+| 配置 | block_type | 参数量 | FLOPs | 说明 |
+| --- | --- | ---: | ---: | --- |
+| `efficientvit-b0-replace-window_crack-512x512.py` | `replace_window` | 0.5519M | 0.514G | 全部 LiteMLA → 8×8 window attention |
+| `efficientvit-b0-replace-hybrid_crack-512x512.py` | `replace_hybrid` | 0.5545M | 0.527G | stage 2 window；stage 3 global |
+| `efficientvit-b0-replace-global_crack-512x512.py` | `replace_global` | 0.5558M | 0.780G | 全部 LiteMLA → global attention |
+
+baseline：
+
+```text
+0.7045M / 0.564G
+```
+
+值得注意：
+
+- 全量替换后参数量反而下降到 **0.55M**，因为去掉了 LiteMLA 的 multi-scale
+  aggregation/qkv 结构；
+- `replace_window` / `replace_hybrid` 的 FLOPs 也略低于 baseline；
+- `replace_global` 因为 stage 2 的 32×32 full attention，FLOPs 升到 0.780G。
+
+### 12.4 运行
+
+单卡顺序：
+
+```bash
+python scripts/efficientvit_attn_20261023/run_variants.py \
+  --gpus 0 \
+  --variants replace_hybrid,replace_window,replace_global \
+  --batch-size 12
+```
+
+双卡队列（默认顺序）：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0,1 \
+  --variants replace_hybrid,replace_window,replace_global \
+  --batch-size 12
+```
+
+执行：
+
+```text
+GPU0: replace_hybrid
+GPU1: replace_window
+GPU0 空出后: replace_global
+```
+
+`batch_train_attn.py` 和 `run_variants.py` 的默认 variants 已切换为这三个
+全量替换版本。
+
+### 12.5 当前状态
+
+- 代码：`EfficientViTBlockReplace` 已实现，支持 `replace_window` /
+  `replace_global` / `replace_hybrid`；
+- 构建：3 个配置均能 `MODELS.build()`；
+- smoke：3 个配置均完成 1–2 iter 前向/反向；
+- 参数量/FLOPs 已测量；
+- **尚未进行 40k 正式训练**，因此还没有全量替换的 mIoU 结果；
+- Round 1 的 40k 结果只作为“叠加式 attention”的对照，不再作为模块替换结论。
