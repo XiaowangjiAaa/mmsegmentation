@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 
 from ..layers import EfficientViTBlock, IdentityLayer, ResidualBlock
+from .feature_mixers import (ASGLALiteMLA, CDGLASGLALiteMLA,
+                             CDGLLiteMLA, FovealLiteMLA)
 from .modules import CoordAttention, EdgeGate, ResidualGlobalAttention, \
     ResidualWindowAttention
 
@@ -207,6 +209,69 @@ class EfficientViTBlockReplace(EfficientViTBlock):
         self.context_module = ResidualBlock(mixer, IdentityLayer())
 
 
+class EfficientViTBlockFeatureMixer(EfficientViTBlock):
+    """Replace LiteMLA with AS-GLA or a channel-decoupled global/local mixer."""
+
+    def __init__(self,
+                 in_channels: int,
+                 dim: int = 32,
+                 expand_ratio: float = 4,
+                 norm: dict = dict(type='BN'),
+                 act_func='hswish',
+                 stage_idx: int = 2,
+                 mixer_type: str = 'asgla',
+                 local_ratio: float = 0.25,
+                 strip_kernel: int = 7,
+                 **kwargs):
+        super().__init__(
+            in_channels=in_channels,
+            dim=dim,
+            expand_ratio=expand_ratio,
+            norm=norm,
+            act_func=act_func,
+            **kwargs)
+        if mixer_type == 'asgla':
+            mixer = ASGLALiteMLA(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                dim=dim,
+                norm=(None, norm),
+                act_func=(None, None),
+                strip_kernel=strip_kernel)
+        elif mixer_type == 'cdgl':
+            mixer = CDGLLiteMLA(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                local_ratio=local_ratio,
+                use_asgla=False,
+                strip_kernel=strip_kernel,
+                norm_cfg=norm,
+                act_cfg=act_func,
+                dim=dim)
+        elif mixer_type == 'cdgl_asgla':
+            mixer = CDGLASGLALiteMLA(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                local_ratio=local_ratio,
+                strip_kernel=strip_kernel,
+                norm_cfg=norm,
+                act_cfg=act_func,
+                dim=dim)
+        elif mixer_type == 'foveal':
+            mixer = FovealLiteMLA(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                dim=dim,
+                norm=(None, norm),
+                act_func=(None, None),
+                local_kernel=strip_kernel,
+                norm_cfg=norm,
+                act_cfg=act_func)
+        else:
+            raise ValueError(f'Unknown feature mixer: {mixer_type}')
+        self.context_module = ResidualBlock(mixer, IdentityLayer())
+
+
 def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     """Build a standard or plugin EfficientViT block.
 
@@ -231,7 +296,11 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     if block_type == 'replace_hybrid':
         return EfficientViTBlockReplace(
             stage_idx=stage_idx, mixer_type='hybrid', **kwargs)
+    if block_type in ('asgla', 'cdgl', 'cdgl_asgla', 'foveal'):
+        return EfficientViTBlockFeatureMixer(
+            stage_idx=stage_idx, mixer_type=block_type, **kwargs)
     raise ValueError(
         f'Unknown EfficientViT block_type {block_type!r}; '
         "expected one of 'v1', 'coord', 'hybrid', 'window', "
-        "'replace_window', 'replace_global', 'replace_hybrid'")
+        "'replace_window', 'replace_global', 'replace_hybrid', "
+        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal'")

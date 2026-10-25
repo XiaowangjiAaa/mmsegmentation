@@ -805,3 +805,96 @@ replace_hybrid from scratch
   2. 改 **SegHead 高分辨率融合**（stride 4 特征、skip attention gate）；
   3. 在 SegHead 融合后加 DEGConv/CoordAttention，而不是替换 backbone LiteMLA；
   4. 增强前景 loss（Tversky/class weight）或换 B1/B2 提升容量。
+
+---
+
+## 13. Round 3：面向裂缝的特征提取器改造
+
+Round 2 的结论是“不能把 LiteMLA 换成通用 window/global attention”，不是
+“不能改特征提取器”。Round 3 改为在 LiteMLA 框架内设计新模块，并替换全部
+4 个 LiteMLA。
+
+### 13.1 四个版本
+
+| 配置 | block_type | 参数量 | FLOPs | 说明 |
+| --- | --- | ---: | ---: | --- |
+| `efficientvit-b0-asgla_crack-512x512.py` | `asgla` | 0.7575M | 0.591G | LiteMLA + 水平/垂直 strip 聚合 |
+| `efficientvit-b0-cdgl_crack-512x512.py` | `cdgl` | 0.6460M | 0.535G | 通道解耦 global/local |
+| `efficientvit-b0-cdgl-asgla_crack-512x512.py` | `cdgl_asgla` | 0.6857M | 0.555G | CDGL + AS-GLA global 分支 |
+| `efficientvit-b0-foveal_crack-512x512.py` | `foveal` | 0.7114M | 0.477G | 2× 下采样全局 + 全分辨率 strip 局部 |
+
+baseline：`0.7045M / 0.564G`。
+
+### 13.2 AS-GLA
+
+- 继承 LiteMLA，保留 `qkv` / `aggreg` / `proj` 参数名；
+- 增加水平 1×7、垂直 7×1 的 depthwise strip 聚合；
+- strip 分支用 `gamma_h/gamma_w=0` 初始化，初始等价于原 LiteMLA；
+- 可加载原 EfficientViT 预训练注意力权重。
+
+### 13.3 CDGL
+
+- 通道分成 global / local 两组；
+- global 组走 LiteMLA（或 AS-GLA）；
+- local 组走 1×7 / 7×1 strip conv；
+- 1×1 融合；
+- **global 分支通道数变小，不能直接加载原 LiteMLA qkv**，属于随机初始化。
+
+### 13.4 CDGL + AS-GLA
+
+- CDGL 的 global 分支使用 AS-GLA；
+- 同时保留通道解耦和各向异性 strip；
+- 参数量 0.6857M，略低于 baseline。
+
+### 13.5 Foveal
+
+- global 分支在 2× 下采样特征上跑 LiteMLA（peripheral）；
+- local 分支在全分辨率上做 strip conv（foveal）；
+- `gamma=0` 初始化，先使用全局路径；
+- 保留 qkv/aggreg/proj，可加载原预训练注意力。
+
+### 13.6 默认训练
+
+`run_variants.py` / `batch_train_attn.py` 的默认 variants 已切换为：
+
+```text
+asgla, cdgl_asgla, cdgl, foveal
+```
+
+双卡：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0,1 --batch-size 12
+```
+
+执行：
+
+```text
+GPU0: asgla
+GPU1: cdgl_asgla
+GPU0 空出后: cdgl
+GPU1 空出后: foveal
+```
+
+### 13.7 当前状态
+
+- 4 个配置均能 `MODELS.build()`；
+- 均完成 1–2 iter 前向/反向 smoke；
+- 参数量/FLOPs 已测量；
+- **尚未进行 40k 正式训练**，因此没有 Round 3 的 mIoU 结果；
+- CDGL/CDGL+AS-GLA 的 global 分支随机初始化，正式对比需要补
+  from-scratch baseline 或后续做权重转换；
+- Boundary-Routed Hybrid Attention（Inter2Former 风格）需要 token gather/
+  scatter 和边界路由，暂未纳入本轮，作为下一阶段。
+
+### 13.8 预期
+
+```text
+AS-GLA     : +0.5 ~ +1.5 IoU，参数量 +7.5%，FLOPs +4.8%
+CDGL       : +0.5 ~ +1.5 IoU，参数量 -8.3%，FLOPs -5.1%
+CDGL+AS-GLA: +0.8 ~ +1.8 IoU，参数量 -2.6%，FLOPs -1.6%
+Foveal     : +0.5 ~ +1.5 IoU，参数量 +1.0%，FLOPs -15.4%
+```
+
+这些是待验证假设，不是保证结果。

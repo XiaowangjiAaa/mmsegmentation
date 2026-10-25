@@ -1,22 +1,23 @@
 # EfficientViT attention experiment scripts (2026-10-23)
 
-本目录是 2026-10-23 新增的 EfficientViT-B0 attention 实验脚本，详细设计见：
+本目录是 EfficientViT-B0 attention / feature-extractor 实验脚本，详细设计见：
 
 - [docs/20261023_EfficientViT_Attention_Upgrade.md](../../docs/20261023_EfficientViT_Attention_Upgrade.md)
 
-## Round 2：全量替换（默认）
+## Round 3：特征提取器改造（默认）
 
-把 stage 2/3 的全部 4 个 LiteMLA 替换成新的 token mixer：
+替换 stage 2/3 的全部 4 个 LiteMLA，MBConv 保持不变：
 
-- `replace_window`：全部换 8×8 window attention
-- `replace_hybrid`：stage 2 window，stage 3 global
-- `replace_global`：全部换 global attention
+- `asgla`：LiteMLA + 水平/垂直 strip 聚合
+- `cdgl`：通道解耦 global/local
+- `cdgl_asgla`：CDGL + AS-GLA global 分支
+- `foveal`：2× 下采样全局 + 全分辨率 strip 局部
 
 ## 脚本
 
 ### `run_variants.py`
 
-顺序运行（单卡），默认跑全量替换：
+顺序运行（单卡），默认跑 Round 3：
 
 ```bash
 python scripts/efficientvit_attn_20261023/run_variants.py \
@@ -36,22 +37,21 @@ python scripts/efficientvit_attn_20261023/batch_train_attn.py \
 默认顺序：
 
 ```text
-GPU0: replace_hybrid
-GPU1: replace_window
-GPU0 空出后: replace_global
+GPU0: asgla
+GPU1: cdgl_asgla
+GPU0 空出后: cdgl
+GPU1 空出后: foveal
 ```
 
-默认 fp32；`hybrid/window` 不建议用 `--amp`。
+默认 fp32；CDGL global 分支不能加载原 LiteMLA 权重，正式对比建议补
+from-scratch baseline。
 
-## Round 1：叠加式对照
+## Round 1 / 2：负结果对照
 
-`coord`、`hybrid`、`window` 仍然保留，但它们是保留 LiteMLA 后额外加
-attention，只能作为对照，不是模块替换实验。
+- `coord`、`hybrid`、`window`：保留 LiteMLA 的叠加式 attention；
+- `replace_window`、`replace_hybrid`、`replace_global`：通用 attention 全量替换。
 
-```bash
-python scripts/efficientvit_attn_20261023/batch_train_attn.py \
-  --gpus 0,1 --variants coord,hybrid,window
-```
+这两组已完成 40k，均未超过 baseline（62.22 IoU/crack），只保留作对照。
 
 ## 变体列表
 
@@ -63,4 +63,8 @@ window
 replace_window
 replace_global
 replace_hybrid
+asgla
+cdgl
+cdgl_asgla
+foveal
 ```

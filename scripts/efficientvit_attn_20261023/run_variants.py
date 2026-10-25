@@ -32,6 +32,18 @@ VARIANTS = {
     'replace_hybrid':
     'configs/efficientvit_attn_20261023/'
     'efficientvit-b0-replace-hybrid_crack-512x512.py',
+    'asgla':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-asgla_crack-512x512.py',
+    'cdgl':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-cdgl_crack-512x512.py',
+    'cdgl_asgla':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-cdgl-asgla_crack-512x512.py',
+    'foveal':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-foveal_crack-512x512.py',
 }
 
 
@@ -39,9 +51,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--variants',
-        default='replace_hybrid,replace_window,replace_global',
+        default='asgla,cdgl_asgla,cdgl,foveal',
         help='comma separated: baseline,coord,hybrid,window, '
-        'replace_window,replace_global,replace_hybrid')
+        'replace_window,replace_global,replace_hybrid, '
+        'asgla,cdgl,cdgl_asgla,foveal')
     parser.add_argument('--gpus', default='0', help='CUDA_VISIBLE_DEVICES')
     parser.add_argument('--batch-size', type=int, default=12)
     parser.add_argument(
