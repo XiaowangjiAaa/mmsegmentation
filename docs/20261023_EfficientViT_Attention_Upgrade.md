@@ -638,10 +638,11 @@ window:
 - 构建：Round 1 的 3 个叠加配置 + Round 2 的 3 个全量替换配置均可
   `MODELS.build()`；
 - smoke：Round 1 与 Round 2 的配置均完成 1–2 iter 前向/反向；
-- 正式训练：Round 1 三个叠加变体完成 40k；Round 2 全量替换尚未正式训练；
+- 正式训练：Round 1 三个叠加变体、Round 2 三个全量替换变体、fp32 baseline
+  均已完成 40k；
 - Round 1 结果：未超过 baseline，只作为叠加式对照；
-- 下一步：跑 Round 2 全量替换 + fp32 baseline，再决定是否改 SegHead 或停止
-  backbone attention 方向。
+- Round 2 结果：全量替换比 fp32 baseline 低 0.87–1.10 IoU，当前不推荐采用；
+- 下一步：补 from-scratch 对照，或转向 SegHead 高分辨率融合 / loss / B1-B2。
 
 ---
 
@@ -737,12 +738,70 @@ GPU0 空出后: replace_global
 `batch_train_attn.py` 和 `run_variants.py` 的默认 variants 已切换为这三个
 全量替换版本。
 
-### 12.5 当前状态
+### 12.5 40k 结果
 
-- 代码：`EfficientViTBlockReplace` 已实现，支持 `replace_window` /
-  `replace_global` / `replace_hybrid`；
-- 构建：3 个配置均能 `MODELS.build()`；
-- smoke：3 个配置均完成 1–2 iter 前向/反向；
-- 参数量/FLOPs 已测量；
-- **尚未进行 40k 正式训练**，因此还没有全量替换的 mIoU 结果；
-- Round 1 的 40k 结果只作为“叠加式 attention”的对照，不再作为模块替换结论。
+baseline 也补跑了 fp32 对照（同一数据、同一 CE+Dice、同一 40k）：
+
+| 模型 | best iter | mIoU | mDice | IoU/crack | Dice/crack | F1/crack | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **baseline B0（fp32）** | 37k | **80.70** | **88.15** | **62.22** | **76.71** | **76.71** | 75.74 | **77.70** |
+| replace_window | 39k | 80.15 | 87.73 | 61.12 | 75.87 | 75.87 | 75.74 | 76.00 |
+| replace_hybrid | 39k | 80.25 | 87.81 | 61.35 | 76.04 | 76.04 | 74.90 | 77.22 |
+| replace_global | 39k | 80.26 | 87.81 | 61.34 | 76.04 | 76.04 | **76.24** | 75.84 |
+
+相对 fp32 baseline 的裂缝 IoU：
+
+```text
+replace_window: -1.10
+replace_hybrid: -0.87
+replace_global: -0.88
+```
+
+结论：
+
+- **全量替换 LiteMLA 后反而下降 0.87–1.10 IoU**；
+- 三个替换版本都没有超过 fp32 baseline；
+- `replace_hybrid` 是替换组里最好的，但仍低 0.87；
+- 参数量/FLOPs 虽然更低（window/hybrid），但精度代价更大。
+
+### 12.6 一个重要的初始化混淆
+
+baseline 通过 `load_from` 加载了转换后的官方 checkpoint，其中包含 **LiteMLA 的
+预训练权重**；全量替换版本把 LiteMLA 删除后，新 attention 是随机初始化的。
+
+因此：
+
+```text
+baseline:      conv + LiteMLA 都来自预训练
+replace_*:     conv 来自预训练，新 attention 从零开始
+```
+
+这不是严格同初始化的架构对比。要判断“替换结构本身是否更差”，还需要：
+
+```bash
+python tools/train.py <config> \
+  --work-dir <dir> \
+  --cfg-options load_from=None
+```
+
+至少补：
+
+```text
+baseline from scratch
+replace_hybrid from scratch
+```
+
+如果 from-scratch 对照下替换仍然更低，才能确认 LiteMLA 的结构/多尺度聚合确实
+比 window/global attention 更适合这个 B0 裂缝任务。
+
+### 12.7 当前判断
+
+- **当前不建议采用任何 attention 替换版本**；
+- LiteMLA 的多尺度 depthwise aggregation + 线性注意力在 B0 上很强，简单换成
+  window/global attention 会丢掉这部分归纳偏置；
+- 继续在 backbone 上做 attention 替换的收益不明显；
+- 下一步优先级：
+  1. from-scratch 对照，确认初始化混淆；
+  2. 改 **SegHead 高分辨率融合**（stride 4 特征、skip attention gate）；
+  3. 在 SegHead 融合后加 DEGConv/CoordAttention，而不是替换 backbone LiteMLA；
+  4. 增强前景 loss（Tversky/class weight）或换 B1/B2 提升容量。
