@@ -877,24 +877,79 @@ GPU0 空出后: cdgl
 GPU1 空出后: foveal
 ```
 
-### 13.7 当前状态
+### 13.7 40k 结果
 
-- 4 个配置均能 `MODELS.build()`；
-- 均完成 1–2 iter 前向/反向 smoke；
-- 参数量/FLOPs 已测量；
-- **尚未进行 40k 正式训练**，因此没有 Round 3 的 mIoU 结果；
-- CDGL/CDGL+AS-GLA 的 global 分支随机初始化，正式对比需要补
-  from-scratch baseline 或后续做权重转换；
-- Boundary-Routed Hybrid Attention（Inter2Former 风格）需要 token gather/
-  scatter 和边界路由，暂未纳入本轮，作为下一阶段。
+四个变体均完成 40k，fp32：
 
-### 13.8 预期
+| 模型 | best iter | mIoU | mDice | IoU/crack | Dice/crack | F1/crack | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **baseline B0** | 37k | **80.70** | **88.15** | **62.22** | **76.71** | **76.71** | 75.74 | 77.70 |
+| asgla | 38k | 80.59 | 88.06 | 61.98 | 76.53 | 76.53 | 76.27 | 76.79 |
+| cdgl | 38k | 80.54 | 88.03 | 61.90 | 76.47 | 76.47 | 75.12 | 77.87 |
+| cdgl_asgla | 35k | 80.35 | 87.88 | 61.51 | 76.17 | 76.17 | 76.46 | 75.88 |
+| foveal | 33k | 80.52 | 88.01 | 61.86 | 76.44 | 76.44 | 74.52 | **78.46** |
+
+相对 baseline 的裂缝 IoU：
 
 ```text
-AS-GLA     : +0.5 ~ +1.5 IoU，参数量 +7.5%，FLOPs +4.8%
-CDGL       : +0.5 ~ +1.5 IoU，参数量 -8.3%，FLOPs -5.1%
-CDGL+AS-GLA: +0.8 ~ +1.8 IoU，参数量 -2.6%，FLOPs -1.6%
-Foveal     : +0.5 ~ +1.5 IoU，参数量 +1.0%，FLOPs -15.4%
+asgla      : -0.24
+cdgl       : -0.32
+cdgl_asgla : -0.71
+foveal     : -0.36
 ```
 
-这些是待验证假设，不是保证结果。
+结论：
+
+- 四个 feature-extractor 版本都没有超过 baseline；
+- asgla 最接近（-0.24），但仍在噪声量级；
+- foveal 的 Recall 最高（78.46），但 Precision 低（74.52），F1 仍低于 baseline；
+- CDGL+AS-GLA 最差（-0.71）；
+- 当前没有证据表明这些特征提取器改造能提升 B0 裂缝分割。
+
+### 13.8 门控分析
+
+AS-GLA 的 `gamma_h/gamma_w`：
+
+```text
+stage2: +0.014 / -0.077, -0.046 / -0.006
+stage3: +0.004 / +0.045, -0.063 / -0.047
+```
+
+Foveal 的 `gamma`：
+
+```text
+stage2: -0.267 / +0.188
+stage3: -0.241 / -0.369
+```
+
+说明：
+
+- 新分支确实被训练，不是“完全没生效”；
+- 但 AS-GLA 的 strip 分支权重很小，说明模型没有从中获得明显收益；
+- Foveal 的局部分支权重较大，Recall 提升，但 Precision 下降，F1 没有改善。
+
+### 13.9 当前判断
+
+- **backbone 特征提取器改造这一轮也没有超过 baseline**；
+- 问题可能不在“attention 形式”，而在：
+  1. B0 容量/数据量已经接近该结构的收益上限；
+  2. 裂缝细节更多受 decoder 分辨率、loss、数据增强影响；
+  3. 0.2–0.7 IoU 的差异可能只是验证噪声，需要多 seed；
+- 不建议直接采用这四个版本；
+- 如果继续做算法创新，优先级应改为：
+  1. **MBConv 局部模块的全量方向化替换**（1×7/7×1 替换所有 3×3 depthwise）；
+  2. **SegHead 高分辨率特征**（stride 4 / detail branch）；
+  3. **损失函数**：Tversky/class weight；
+  4. **B1/B2 容量**；
+  5. Boundary routing 作为高风险探索。
+- Boundary-Routed Hybrid Attention 需要 token gather/scatter 和边界路由，
+  暂未纳入本轮。
+
+### 13.10 原预期（已证伪）
+
+```text
+AS-GLA     : +0.5 ~ +1.5 IoU  → 实际 -0.24
+CDGL       : +0.5 ~ +1.5 IoU  → 实际 -0.32
+CDGL+AS-GLA: +0.8 ~ +1.8 IoU  → 实际 -0.71
+Foveal     : +0.5 ~ +1.5 IoU  → 实际 -0.36
+```
