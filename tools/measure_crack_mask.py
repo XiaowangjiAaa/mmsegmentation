@@ -32,6 +32,10 @@ def parse_args():
     parser.add_argument(
         '--preview-width', type=int, default=1600,
         help='width of the preview image; 0 disables the preview')
+    parser.add_argument(
+        '--close-kernel', type=int, default=5,
+        help='odd morphological closing kernel used before skeletonization; '
+        '0 disables closing')
     return parser.parse_args()
 
 
@@ -58,14 +62,15 @@ def skeletonize(mask: np.ndarray) -> np.ndarray:
     return skel > 0
 
 
-def largest_skeleton_component(skel: np.ndarray):
+def skeleton_components(skel: np.ndarray, min_area: int = 30):
+    """Return significant skeleton component labels (8-connectivity)."""
     num, labels, stats, _ = cv2.connectedComponentsWithStats(
         skel.astype(np.uint8), connectivity=8)
-    if num <= 1:
-        return None, None
-    # Exclude background; largest component is the main crack network.
-    index = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-    return index, labels
+    components = [
+        index for index in range(1, num)
+        if stats[index, cv2.CC_STAT_AREA] >= min_area
+    ]
+    return components, labels
 
 
 def dijkstra(adjacency, start):
@@ -127,10 +132,10 @@ def longest_geodesic_path(skel_component: np.ndarray):
     return path_coords.astype(np.int32), float(dist[end]), float(total_length)
 
 
-def maximum_width(mask: np.ndarray, skel_component: np.ndarray):
+def maximum_width(mask: np.ndarray, skeleton: np.ndarray):
     distance = cv2.distanceTransform(
         (mask > 0).astype(np.uint8), cv2.DIST_L2, 5)
-    ys, xs = np.nonzero(skel_component)
+    ys, xs = np.nonzero(skeleton)
     if len(xs) == 0:
         return 0.0, (0, 0), (1.0, 0.0)
     values = distance[ys, xs]
@@ -146,8 +151,8 @@ def maximum_width(mask: np.ndarray, skel_component: np.ndarray):
     if norm < 1.0e-6:
         # Fallback: PCA of nearby skeleton pixels gives the tangent; use its
         # normal if the distance transform is locally flat.
-        nearby = skel_component[max(0, y - 20):y + 21,
-                                max(0, x - 20):x + 21]
+        nearby = skeleton[max(0, y - 20):y + 21,
+                          max(0, x - 20):x + 21]
         ny, nx = np.nonzero(nearby)
         if len(nx) >= 2:
             points = np.stack([nx, ny], axis=1).astype(np.float32)
@@ -199,20 +204,51 @@ def main():
             interpolation=cv2.INTER_NEAREST)
     binary = (mask > 127).astype(np.uint8)
 
-    skel = skeletonize(binary)
-    component_index, labels = largest_skeleton_component(skel)
-    if component_index is None:
+    # A small closing fills holes in the predicted stripe before skeletonizing,
+    # so the centreline stays continuous. The original ``binary`` is still used
+    # for the area and width measurements.
+    if args.close_kernel > 0:
+        kernel_size = args.close_kernel
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        closed = cv2.morphologyEx(
+            binary,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                      (kernel_size, kernel_size)))
+    else:
+        closed = binary
+    skel = skeletonize(closed)
+    components, labels = skeleton_components(skel, min_area=30)
+    if not components:
         raise SystemExit('The mask has no foreground skeleton.')
-    component = labels == component_index
 
-    path, length_px, total_length_px = longest_geodesic_path(component)
-    width_px, center, normal = maximum_width(binary, component)
+    best_path = None
+    best_length = -1.0
+    total_length_px = 0.0
+    for component_index in components:
+        component = labels == component_index
+        path, length, component_total = longest_geodesic_path(component)
+        total_length_px += component_total
+        if length > best_length:
+            best_length = length
+            best_path = path
+    path, length_px = best_path, best_length
+    significant = np.isin(labels, components)
+    width_px, center, normal = maximum_width(binary, significant)
 
     # Binary prediction overlay (red).
     overlay = image.copy()
     red = np.zeros_like(image)
     red[binary > 0] = (0, 0, 255)
     overlay = cv2.addWeighted(overlay, 0.55, red, 0.45, 0)
+
+    # Full skeleton (thin green) keeps every branch and every significant
+    # component visible; the longest path is drawn later in bright green.
+    skeleton_vis = cv2.dilate(
+        significant.astype(np.uint8),
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+    overlay[skeleton_vis > 0] = (0, 210, 0)
 
     # Longest geodesic path = measured crack length.
     if len(path) >= 2:
@@ -239,7 +275,8 @@ def main():
     crack_pixels = int(binary.sum())
     ratio = crack_pixels / max(total_pixels, 1) * 100.0
     lines = [
-        f'Length: {length_px:.1f} px',
+        f'Longest path: {length_px:.1f} px',
+        f'Skeleton total: {total_length_px:.1f} px',
         f'Max width: {width_px:.1f} px',
         f'Crack ratio: {ratio:.3f}%',
     ]
@@ -273,6 +310,7 @@ def main():
         'crack_pixels': crack_pixels,
         'crack_ratio_percent': round(ratio, 4),
         'length_px': round(length_px, 3),
+        'skeleton_components': len(components),
         'skeleton_total_length_px': round(total_length_px, 3),
         'max_width_px': round(width_px, 3),
         'max_width_center': [int(cx), int(cy)],
