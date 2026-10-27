@@ -245,9 +245,10 @@ def main():
 
     # Full skeleton (thin green) keeps every branch and every significant
     # component visible; the longest path is drawn later in bright green.
+    # Both use the same 5 px visual width (scheme A).
     skeleton_vis = cv2.dilate(
         significant.astype(np.uint8),
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
     overlay[skeleton_vis > 0] = (0, 210, 0)
 
     # Longest geodesic path = measured crack length.
