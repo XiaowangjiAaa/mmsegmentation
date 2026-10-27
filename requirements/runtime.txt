@@ -4,5 +4,6 @@ numpy
 packaging
 prettytable
 regex
+scikit-image
 scipy
 setuptools<81
