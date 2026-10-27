@@ -953,3 +953,169 @@ CDGL       : +0.5 ~ +1.5 IoU  → 实际 -0.32
 CDGL+AS-GLA: +0.8 ~ +1.8 IoU  → 实际 -0.71
 Foveal     : +0.5 ~ +1.5 IoU  → 实际 -0.36
 ```
+
+---
+
+## 14. Round 4：Orientation-Adaptive Linear Attention（OA-LA）
+
+Round 1–3 的问题都是“把现成模块放进 backbone”或“静态多尺度增强”。
+Round 4 换成一个针对裂缝的**新机制**：让 token mixing 跟随图像局部方向。
+
+### 14.1 问题假设
+
+LiteMLA 的聚合是：
+
+```text
+固定的、各向同性的 5×5 depthwise 多尺度聚合
+```
+
+它不知道当前位置的裂缝往哪个方向走。AS-GLA 只是加了固定的水平/垂直
+strip，仍然是静态方向先验。
+
+OA-LA 的假设：
+
+> 对细长、方向性强的裂缝，token mixing 应该由局部方向场动态决定，
+> 而不是固定使用 5×5 或固定的水平/垂直分支。
+
+### 14.2 方法
+
+#### 方向场
+
+对当前特征做 Sobel + structure tensor：
+
+```text
+Ix, Iy = Sobel(x)
+Jxx = G * Ix²
+Jyy = G * Iy²
+Jxy = G * Ix * Iy
+
+theta = 0.5 * atan2(2Jxy, Jxx - Jyy)
+coherence = sqrt((Jxx-Jyy)² + 4Jxy²) / (Jxx+Jyy+eps)
+```
+
+- `theta` 是 structure tensor 的主轴，取 tangent 作为裂缝方向；
+- `coherence` 表示方向置信度；
+- 方向场无额外参数，且用 `no_grad` 计算，作为动态先验。
+
+#### 方向聚合
+
+保留 LiteMLA 的 qkv / 原 5×5 聚合 / proj，增加四个方向分支：
+
+```text
+0°   : 1×7 depthwise + grouped 1×1
+45°  : 7×7 对角 depthwise + grouped 1×1
+90°  : 7×1 depthwise + grouped 1×1
+135° : 7×7 反对角 depthwise + grouped 1×1
+```
+
+方向权重：
+
+```text
+w_i = softmax(cos(2(theta - angle_i)) * coherence / tau)
+```
+
+聚合：
+
+```text
+oriented = Σ w_i * Branch_i(qkv)
+multi_scale_qkv[1] = base_aggregation + gamma * oriented
+```
+
+- `gamma=0` 初始化，初始等价于原 LiteMLA；
+- qkv / 原 5×5 分支 / proj 可加载预训练；
+- 替换全部 4 个 LiteMLA，MBConv 不变。
+
+### 14.3 成本
+
+| 模型 | 参数量 | FLOPs |
+| --- | ---: | ---: |
+| baseline B0 | 0.7045M | 0.564G |
+| OA-LA | 0.9073M | 0.667G |
+
+增量：
+
+```text
+参数量 +28.8%
+FLOPs +18.3%
+```
+
+比“少量”略高，但仍低于 1M；如果收益明显，可以再把 `strip_kernel`
+从 7 降到 5、或去掉 45°/135° 分支降成本。
+
+### 14.4 与已有工作的区别
+
+| 方法 | 聚合方向 | 是否动态 |
+| --- | --- | --- |
+| LiteMLA | 固定 5×5 多尺度 | 否 |
+| AS-GLA | 固定水平/垂直 strip | 静态 |
+| MixerCSeg DEGConv | 方向先验 + edge gate | 部分静态 |
+| Inter2Former | 边界路由 | 边界，不是方向 |
+| **OA-LA** | **structure tensor 方向场 + 4 方向加权** | **是** |
+
+这不是复现某个模块，而是把裂缝方向场作为 token mixing 的条件。
+
+### 14.5 运行
+
+默认 variants 已切换为 `oala`：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0,1 --batch-size 12
+```
+
+加 baseline 对照：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0,1 \
+  --variants baseline,oala \
+  --batch-size 12
+```
+
+单卡：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0 --variants baseline,oala
+```
+
+### 14.6 当前状态
+
+- 代码：`OALALiteMLA` 已实现，替换全部 4 个 LiteMLA；
+- 构建：配置可 `MODELS.build()`；
+- smoke：完成 2 iter 前向/反向，loss/grad_norm 正常；
+- 参数量/FLOPs 已测量；
+- **尚未进行 40k 正式训练**，因此没有 OA-LA 的 mIoU 结果。
+
+### 14.7 实验设计
+
+| 实验 | 修改 | 目的 |
+| --- | --- | --- |
+| H0 | baseline | 62.22 |
+| O1 | OA-LA 全量替换 | 验证方向自适应 |
+| O2 | O1 去掉方向场，固定 4 方向 | 消融方向场 |
+| O3 | O1 去掉 45/135 分支 | 消融方向数 |
+| O4 | O1 把 strip_kernel 7→5 | 成本/精度权衡 |
+| O5 | from-scratch baseline vs O1 | 排除预训练混淆 |
+
+判断标准：
+
+```text
+O1 > baseline +0.5 且 O1 > O2 → 方向场有效
+O1 ≈ O2 → 收益只是来自多分支，不是方向自适应
+O1 < baseline → backbone 方向可能需要停止
+```
+
+预期（待验证）：
+
+```text
+O1: +0.5 ~ +1.5 IoU
+```
+
+### 14.8 当前建议
+
+- 这是目前最符合“创新而不是复现”的版本；
+- 但成本增加比前几轮大（+28.8% params / +18.3% FLOPs）；
+- 先跑 `baseline,oala` 两组 40k，再决定是否保留；
+- 如果 OA-LA 仍然不涨，建议停止 backbone attention 方向，转向方向化
+  MBConv、SegHead 高分辨率、loss 或 B1/B2。

@@ -4,9 +4,13 @@
 
 - [docs/20261023_EfficientViT_Attention_Upgrade.md](../../docs/20261023_EfficientViT_Attention_Upgrade.md)
 
-## Round 3：特征提取器改造（默认）
+## Round 4：OA-LA（默认）
 
 替换 stage 2/3 的全部 4 个 LiteMLA，MBConv 保持不变：
+
+- `oala`：structure tensor 方向场 + 4 方向 strip 聚合
+
+## Round 3：特征提取器改造（对照）
 
 - `asgla`：LiteMLA + 水平/垂直 strip 聚合
 - `cdgl`：通道解耦 global/local
@@ -17,7 +21,7 @@
 
 ### `run_variants.py`
 
-顺序运行（单卡），默认跑 Round 3：
+顺序运行（单卡），默认跑 OA-LA：
 
 ```bash
 python scripts/efficientvit_attn_20261023/run_variants.py \
@@ -34,17 +38,21 @@ python scripts/efficientvit_attn_20261023/batch_train_attn.py \
   --gpus 0,1 --batch-size 12
 ```
 
-默认顺序：
+默认只跑：
 
 ```text
-GPU0: asgla
-GPU1: cdgl_asgla
-GPU0 空出后: cdgl
-GPU1 空出后: foveal
+GPU0: oala
 ```
 
-默认 fp32；CDGL global 分支不能加载原 LiteMLA 权重，正式对比建议补
-from-scratch baseline。
+要跑多个版本时显式传 `--variants`，例如：
+
+```bash
+python scripts/efficientvit_attn_20261023/batch_train_attn.py \
+  --gpus 0,1 --variants baseline,oala --batch-size 12
+```
+
+默认 fp32；OA-LA 保留 qkv/proj/原 5×5 聚合，可加载原 LiteMLA 权重。
+CDGL global 分支不能加载原 LiteMLA 权重，正式对比建议补 from-scratch baseline。
 
 ## Round 1 / 2：负结果对照
 
@@ -67,4 +75,5 @@ asgla
 cdgl
 cdgl_asgla
 foveal
+oala
 ```

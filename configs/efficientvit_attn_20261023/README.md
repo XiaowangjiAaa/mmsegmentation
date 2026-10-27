@@ -6,7 +6,21 @@
 B0 只有 stage 2/3 有 LiteMLA（各 2 个，共 4 个）；stage 0/1 是纯 MBConv。
 因此“替换全部相似作用的部分”就是替换这 4 个 LiteMLA，MBConv 保持不变。
 
-## Round 3：特征提取器改造（当前主线）
+## Round 4：OA-LA（当前主线）
+
+**Orientation-Adaptive Linear Attention**：用 structure tensor 估计局部裂缝方向，
+动态加权 0°/45°/90°/135° 四个各向异性 strip 聚合分支；替换全部 4 个 LiteMLA。
+
+| 配置 | block_type | 参数量 | FLOPs | 说明 |
+| --- | --- | ---: | ---: | --- |
+| `efficientvit-b0-oala_crack-512x512.py` | `oala` | 0.9073M | 0.667G | 方向场 + 4 方向 strip 聚合 |
+
+- 保留 LiteMLA 的 qkv/aggreg/proj，可加载预训练；
+- 方向分支 `gamma=0` 初始化，初始等价于原模型；
+- 方向场由 Sobel + structure tensor 计算，无可学习参数；
+- 4 个方向权重由方向和 coherence 动态生成。
+
+## Round 3：特征提取器改造
 
 | 配置 | block_type | 参数量 | FLOPs | 说明 |
 | --- | --- | ---: | ---: | --- |
@@ -69,20 +83,21 @@ window        : 61.74
 ## 运行
 
 ```bash
-# 默认跑 Round 3 四个 feature-extractor 版本
+# 默认跑 Round 4 OA-LA
 python scripts/efficientvit_attn_20261023/run_variants.py --gpus 0
 
-# 双卡队列
+# 双卡队列：OA-LA + baseline
 python scripts/efficientvit_attn_20261023/batch_train_attn.py \
   --gpus 0,1 \
-  --variants asgla,cdgl_asgla,cdgl,foveal \
+  --variants baseline,oala \
   --batch-size 12
 
 # 单个变体
 python tools/train.py \
-  configs/efficientvit_attn_20261023/efficientvit-b0-asgla_crack-512x512.py \
-  --work-dir work_dirs/efficientvit_attn_20261023/asgla
+  configs/efficientvit_attn_20261023/efficientvit-b0-oala_crack-512x512.py \
+  --work-dir work_dirs/efficientvit_attn_20261023/oala
 ```
 
-默认 fp32；CDGL 的 global 分支不能加载原 LiteMLA 权重，正式对比时建议补
+默认 fp32；OA-LA 保留 qkv/proj/原 5×5 聚合，可加载原 LiteMLA 权重。
+CDGL 的 global 分支不能加载原 LiteMLA 权重，正式对比时建议补
 from-scratch baseline（`--cfg-options load_from=None`）。

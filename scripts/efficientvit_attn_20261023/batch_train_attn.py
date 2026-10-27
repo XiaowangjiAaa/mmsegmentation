@@ -55,6 +55,9 @@ VARIANTS = {
     'foveal':
     'configs/efficientvit_attn_20261023/'
     'efficientvit-b0-foveal_crack-512x512.py',
+    'oala':
+    'configs/efficientvit_attn_20261023/'
+    'efficientvit-b0-oala_crack-512x512.py',
 }
 
 
@@ -64,10 +67,10 @@ def parse_args():
         '--gpus', default='0,1', help='comma separated GPU ids, e.g. 0,1')
     parser.add_argument(
         '--variants',
-        default='asgla,cdgl_asgla,cdgl,foveal',
+        default='oala',
         help='comma separated: baseline,coord,hybrid,window, '
         'replace_window,replace_global,replace_hybrid, '
-        'asgla,cdgl,cdgl_asgla,foveal')
+        'asgla,cdgl,cdgl_asgla,foveal,oala')
     parser.add_argument('--batch-size', type=int, default=12)
     parser.add_argument(
         '--max-iters',

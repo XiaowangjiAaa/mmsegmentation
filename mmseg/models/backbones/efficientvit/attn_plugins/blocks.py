@@ -9,6 +9,7 @@ from .feature_mixers import (ASGLALiteMLA, CDGLASGLALiteMLA,
                              CDGLLiteMLA, FovealLiteMLA)
 from .modules import CoordAttention, EdgeGate, ResidualGlobalAttention, \
     ResidualWindowAttention
+from .oala import OALALiteMLA
 
 
 class EfficientViTBlockCoord(EfficientViTBlock):
@@ -267,6 +268,14 @@ class EfficientViTBlockFeatureMixer(EfficientViTBlock):
                 local_kernel=strip_kernel,
                 norm_cfg=norm,
                 act_cfg=act_func)
+        elif mixer_type == 'oala':
+            mixer = OALALiteMLA(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                dim=dim,
+                norm=(None, norm),
+                act_func=(None, None),
+                strip_kernel=strip_kernel)
         else:
             raise ValueError(f'Unknown feature mixer: {mixer_type}')
         self.context_module = ResidualBlock(mixer, IdentityLayer())
@@ -296,11 +305,11 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     if block_type == 'replace_hybrid':
         return EfficientViTBlockReplace(
             stage_idx=stage_idx, mixer_type='hybrid', **kwargs)
-    if block_type in ('asgla', 'cdgl', 'cdgl_asgla', 'foveal'):
+    if block_type in ('asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala'):
         return EfficientViTBlockFeatureMixer(
             stage_idx=stage_idx, mixer_type=block_type, **kwargs)
     raise ValueError(
         f'Unknown EfficientViT block_type {block_type!r}; '
         "expected one of 'v1', 'coord', 'hybrid', 'window', "
         "'replace_window', 'replace_global', 'replace_hybrid', "
-        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal'")
+        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala'")
