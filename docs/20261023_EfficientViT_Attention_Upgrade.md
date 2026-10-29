@@ -1079,43 +1079,62 @@ python scripts/efficientvit_attn_20261023/batch_train_attn.py \
   --gpus 0 --variants baseline,oala
 ```
 
-### 14.6 当前状态
+### 14.6 40k 结果
 
-- 代码：`OALALiteMLA` 已实现，替换全部 4 个 LiteMLA；
-- 构建：配置可 `MODELS.build()`；
-- smoke：完成 2 iter 前向/反向，loss/grad_norm 正常；
-- 参数量/FLOPs 已测量；
-- **尚未进行 40k 正式训练**，因此没有 OA-LA 的 mIoU 结果。
+`baseline,oala` 两组均完成 40k，fp32：
 
-### 14.7 实验设计
+| 模型 | best iter | mIoU | mDice | IoU/crack | F1/crack | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **baseline B0** | 37k | **80.70** | **88.15** | **62.22** | **76.71** | 75.74 | **77.70** |
+| OA-LA | 39k | 80.65 | 88.11 | 62.12 | 76.63 | **76.25** | 77.02 |
 
-| 实验 | 修改 | 目的 |
-| --- | --- | --- |
-| H0 | baseline | 62.22 |
-| O1 | OA-LA 全量替换 | 验证方向自适应 |
-| O2 | O1 去掉方向场，固定 4 方向 | 消融方向场 |
-| O3 | O1 去掉 45/135 分支 | 消融方向数 |
-| O4 | O1 把 strip_kernel 7→5 | 成本/精度权衡 |
-| O5 | from-scratch baseline vs O1 | 排除预训练混淆 |
-
-判断标准：
+相对 baseline：
 
 ```text
-O1 > baseline +0.5 且 O1 > O2 → 方向场有效
-O1 ≈ O2 → 收益只是来自多分支，不是方向自适应
-O1 < baseline → backbone 方向可能需要停止
+IoU/crack : -0.10
+Dice/F1   : -0.08
+mIoU      : -0.05
+Precision : +0.51
+Recall    : -0.68
 ```
 
-预期（待验证）：
+最终 40k 点：
 
 ```text
-O1: +0.5 ~ +1.5 IoU
+baseline: 61.81 IoU/crack
+OA-LA   : 62.00 IoU/crack
 ```
 
-### 14.8 当前建议
+但按 best mIoU 选模型，OA-LA 仍然低 0.10。
 
-- 这是目前最符合“创新而不是复现”的版本；
-- 但成本增加比前几轮大（+28.8% params / +18.3% FLOPs）；
-- 先跑 `baseline,oala` 两组 40k，再决定是否保留；
-- 如果 OA-LA 仍然不涨，建议停止 backbone attention 方向，转向方向化
-  MBConv、SegHead 高分辨率、loss 或 B1/B2。
+### 14.7 判断
+
+- OA-LA 是目前所有 feature-extractor 变体里**最接近 baseline** 的：
+  - AS-GLA 61.98
+  - CDGL 61.90
+  - Foveal 61.86
+  - **OA-LA 62.12**
+  - baseline 62.22
+- 但 **-0.10 IoU 仍在噪声量级**，不能证明方向场带来真实提升；
+- 代价是参数量 +28.8%、FLOPs +18.3%，性价比不成立；
+- 方向分支不是没训练：`gamma` 约为：
+
+```text
+stage2: +0.079 / +0.101
+stage3: -0.084 / -0.069
+```
+
+说明模型确实用了方向分支，但没有转化为精度收益。
+
+### 14.8 结论与下一步
+
+- 不采用 OA-LA 作为新的 baseline；
+- 如果还要确认，建议用 **2–3 个随机种子** 重跑 baseline/OA-LA，看 -0.10 是否稳定；
+- 如果多 seed 仍然没有提升，建议停止 backbone attention 方向；
+- 后续优先级：
+  1. 方向化 MBConv（替换所有 3×3 depthwise，而不是加 attention 分支）；
+  2. SegHead 高分辨率 / stride 4；
+  3. Tversky / class weight；
+  4. B1/B2 容量。
+
+OA-LA 作为“方向自适应 token mixing”的负结果保留，不再继续堆 attention 变体。
