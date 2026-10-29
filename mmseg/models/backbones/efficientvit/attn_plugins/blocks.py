@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from ..layers import EfficientViTBlock, IdentityLayer, ResidualBlock
+from .cra import CRAModule
 from .feature_mixers import (ASGLALiteMLA, CDGLASGLALiteMLA,
                              CDGLLiteMLA, FovealLiteMLA)
 from .modules import CoordAttention, EdgeGate, ResidualGlobalAttention, \
@@ -281,6 +282,42 @@ class EfficientViTBlockFeatureMixer(EfficientViTBlock):
         self.context_module = ResidualBlock(mixer, IdentityLayer())
 
 
+class EfficientViTBlockCRA(EfficientViTBlock):
+    """Replace LiteMLA with Curve-Routed Attention."""
+
+    def __init__(self,
+                 in_channels: int,
+                 dim: int = 32,
+                 expand_ratio: float = 4,
+                 norm: dict = dict(type='BN'),
+                 act_func='hswish',
+                 stage_idx: int = 2,
+                 num_curves: int = 16,
+                 points_per_curve: int = 16,
+                 num_heads: int = 4,
+                 curve_length: float = 0.8,
+                 offset_scale: float = 0.15,
+                 **kwargs):
+        super().__init__(
+            in_channels=in_channels,
+            dim=dim,
+            expand_ratio=expand_ratio,
+            norm=norm,
+            act_func=act_func,
+            **kwargs)
+        mixer = CRAModule(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            num_curves=num_curves,
+            points_per_curve=points_per_curve,
+            num_heads=num_heads,
+            curve_length=curve_length,
+            offset_scale=offset_scale,
+            norm_cfg=norm,
+            act_cfg=act_func)
+        self.context_module = ResidualBlock(mixer, IdentityLayer())
+
+
 def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     """Build a standard or plugin EfficientViT block.
 
@@ -308,8 +345,10 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     if block_type in ('asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala'):
         return EfficientViTBlockFeatureMixer(
             stage_idx=stage_idx, mixer_type=block_type, **kwargs)
+    if block_type == 'cra':
+        return EfficientViTBlockCRA(stage_idx=stage_idx, **kwargs)
     raise ValueError(
         f'Unknown EfficientViT block_type {block_type!r}; '
         "expected one of 'v1', 'coord', 'hybrid', 'window', "
         "'replace_window', 'replace_global', 'replace_hybrid', "
-        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala'")
+        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala', 'cra'")
