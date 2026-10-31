@@ -214,3 +214,63 @@ C1 < baseline → 当前实现/训练不稳定
 - CRA 没有预训练 attention，必须补 from-scratch 对照；
 - grid_sample/scatter 的实际速度比 FLOPs 统计更慢；
 - 目前没有 coverage/diversity 辅助 loss，v1 先验证曲线 tokenization 是否有效。
+
+## 9. 40k 结果
+
+`baseline,cra` 两组均从 scratch 训练 40k，fp32：
+
+| 模型 | best iter | mIoU | mDice | IoU/crack | F1/crack | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline scratch | 39k | **78.41** | **86.38** | **57.78** | **73.24** | 71.15 | **75.45** |
+| CRA scratch | 40k | 77.59 | 85.71 | 56.13 | 71.90 | **73.63** | 70.25 |
+
+相对 from-scratch baseline：
+
+```text
+IoU/crack : -1.65
+F1/crack  : -1.34
+Precision : +2.48
+Recall    : -5.20
+mIoU      : -0.82
+```
+
+对照参考：
+
+```text
+baseline pretrained : 62.22
+OA-LA pretrained    : 62.12
+CRA scratch         : 56.13
+baseline scratch    : 57.78
+```
+
+### 9.1 分析
+
+- CRA 没有超过 from-scratch baseline，低 1.65 IoU；
+- Precision 更高，但 Recall 低 5.20，F1 低 1.34；
+- 说明曲线分支不是“没生效”，而是 **覆盖不足、召回下降**；
+- `gamma` 已经学到较大值：
+
+```text
+stage2: +0.259 / -0.377
+stage3: +0.431 / +0.678
+```
+
+- 曲线分支确实在参与，但曲线覆盖不到所有裂缝区域；
+- 16 条曲线 × 16 点 = 256 个采样点，对整张图的裂缝网络太稀疏；
+- 没有 coverage/diversity loss，曲线容易集中在少数区域；
+- CRA 没有预训练 attention，from-scratch 40k 也不够充分；
+- 当前 CRA v1 不能替代 baseline。
+
+### 9.2 下一步建议
+
+如果继续 CRA，应优先改“覆盖”而不是继续调 attention：
+
+1. **增加曲线密度**：4×4 → 8×8 seed，K=16 → 32；
+2. **coverage loss**：用 GT skeleton 监督曲线点覆盖裂缝；
+3. **diversity loss**：避免曲线塌缩；
+4. **多尺度曲线**：stage2 短曲线、stage3 长曲线；
+5. **splat 改为软 splat**：Gaussian/邻域扩散，而不是只在采样点写回；
+6. 再跑 from-scratch baseline + CRA 60–80k。
+
+如果 CRA v2 仍然低于 baseline，说明当前曲线 tokenization 不适合 B0/裂缝，
+应停止这条路线。

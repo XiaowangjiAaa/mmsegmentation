@@ -11,6 +11,15 @@ stage 2/3 的全部 4 个 LiteMLA；MBConv 不变。
 
 baseline：`0.7045M / 0.564G`。
 
+40k from-scratch 结果：
+
+```text
+baseline scratch : 57.78 IoU/crack
+CRA scratch      : 56.13 (-1.65)
+```
+
+CRA 未超过 baseline；主要是 Recall 下降（曲线覆盖不足）。
+
 ## CRA 结构
 
 ```text
