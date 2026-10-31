@@ -29,6 +29,8 @@ class CRAModule(nn.Module):
                  num_heads: int = 4,
                  curve_length: float = 0.8,
                  offset_scale: float = 0.15,
+                 splat_sigma: float = 0.0,
+                 splat_radius: int = 1,
                  norm_cfg: Optional[dict] = None,
                  act_cfg: Optional[dict] = None,
                  **kwargs):
@@ -40,6 +42,8 @@ class CRAModule(nn.Module):
         self.num_curves = num_curves
         self.points_per_curve = points_per_curve
         self.offset_scale = offset_scale
+        self.splat_sigma = float(splat_sigma)
+        self.splat_radius = int(splat_radius)
 
         self.local = nn.Sequential(
             nn.Conv2d(
@@ -107,8 +111,7 @@ class CRAModule(nn.Module):
         tokens = sampled.flatten(2).transpose(1, 2)
         return tokens, coords
 
-    @staticmethod
-    def _splat(tokens: torch.Tensor, coords: torch.Tensor, h: int,
+    def _splat(self, tokens: torch.Tensor, coords: torch.Tensor, h: int,
                w: int) -> torch.Tensor:
         b, c, m, k = tokens.shape
         n = m * k
@@ -123,20 +126,36 @@ class CRAModule(nn.Module):
         wy = y - y0
         out = values.new_zeros(b, c, h * w)
         norm = values.new_zeros(b, 1, h * w)
-        weights = (
-            (1.0 - wx) * (1.0 - wy),
-            wx * (1.0 - wy),
-            (1.0 - wx) * wy,
-            wx * wy,
-        )
-        for dx, dy, weight in zip((0, 1, 0, 1), (0, 0, 1, 1), weights):
-            xi = (x0 + dx).clamp(0, w - 1)
-            yi = (y0 + dy).clamp(0, h - 1)
-            index = (yi * w + xi).unsqueeze(1)
-            out.scatter_add_(
-                2, index.expand(-1, c, -1),
-                values * weight.unsqueeze(1))
-            norm.scatter_add_(2, index, weight.unsqueeze(1))
+
+        if self.splat_sigma > 0:
+            radius = max(1, int(self.splat_radius))
+            two_sigma_sq = 2.0 * self.splat_sigma * self.splat_sigma
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    xi = (x0 + dx).clamp(0, w - 1)
+                    yi = (y0 + dy).clamp(0, h - 1)
+                    dist_sq = (dx - wx)**2 + (dy - wy)**2
+                    weight = torch.exp(-dist_sq / two_sigma_sq)
+                    index = (yi * w + xi).unsqueeze(1)
+                    out.scatter_add_(
+                        2, index.expand(-1, c, -1),
+                        values * weight.unsqueeze(1))
+                    norm.scatter_add_(2, index, weight.unsqueeze(1))
+        else:
+            weights = (
+                (1.0 - wx) * (1.0 - wy),
+                wx * (1.0 - wy),
+                (1.0 - wx) * wy,
+                wx * wy,
+            )
+            for dx, dy, weight in zip((0, 1, 0, 1), (0, 0, 1, 1), weights):
+                xi = (x0 + dx).clamp(0, w - 1)
+                yi = (y0 + dy).clamp(0, h - 1)
+                index = (yi * w + xi).unsqueeze(1)
+                out.scatter_add_(
+                    2, index.expand(-1, c, -1),
+                    values * weight.unsqueeze(1))
+                norm.scatter_add_(2, index, weight.unsqueeze(1))
         out = out / norm.clamp_min(1.0e-6)
         return out.view(b, c, h, w)
 

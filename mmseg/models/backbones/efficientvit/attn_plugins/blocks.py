@@ -297,6 +297,8 @@ class EfficientViTBlockCRA(EfficientViTBlock):
                  num_heads: int = 4,
                  curve_length: float = 0.8,
                  offset_scale: float = 0.15,
+                 splat_sigma: float = 0.0,
+                 splat_radius: int = 1,
                  **kwargs):
         super().__init__(
             in_channels=in_channels,
@@ -313,6 +315,8 @@ class EfficientViTBlockCRA(EfficientViTBlock):
             num_heads=num_heads,
             curve_length=curve_length,
             offset_scale=offset_scale,
+            splat_sigma=splat_sigma,
+            splat_radius=splat_radius,
             norm_cfg=norm,
             act_cfg=act_func)
         self.context_module = ResidualBlock(mixer, IdentityLayer())
