@@ -97,3 +97,54 @@ python scripts/efficientvit_cra_20261031/batch_train_cra.py \
 
 `grid_sample` / scatter 的实际速度比 FLOPs 统计更慢；dense/soft 版本更明显。
 默认 fp32，不建议 AMP。
+
+## 7. 40k 结果
+
+五个版本均完成 40k from scratch，fp32：
+
+| 模型 | best iter | mIoU | mDice | IoU/crack | F1/crack | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **baseline scratch** | 40k | **78.68** | **86.59** | **58.29** | **73.65** | 71.97 | **75.42** |
+| cra | 40k | 77.69 | 85.79 | 56.32 | 72.06 | **73.62** | 70.57 |
+| cra_dense | 35k | 77.16 | 85.36 | 55.30 | 71.21 | 72.83 | 69.67 |
+| cra_long | 38k | 77.44 | 85.60 | 55.88 | 71.70 | 70.29 | 73.16 |
+| cra_soft | 33k | 76.57 | 84.88 | 54.17 | 70.28 | 69.49 | 71.09 |
+
+相对 baseline scratch：
+
+```text
+cra        : -1.97
+cra_dense  : -2.99
+cra_long   : -2.41
+cra_soft   : -4.12
+```
+
+### 7.1 结论
+
+- **没有任何 CRA v2 版本超过 baseline**；
+- v1 CRA 仍是 CRA 系列最好的（56.32）；
+- dense / long / soft 都没有把 Recall 拉回 baseline：
+  - dense 反而降到 69.67；
+  - long 的 Recall 73.16，但 Precision 只有 70.29；
+  - soft 最差，54.17 IoU；
+- 增加曲线密度、长度、soft splat 都没有解决根本问题。
+
+### 7.2 原因
+
+- CRA 用 **局部 depthwise + 稀疏曲线分支** 替掉 LiteMLA，丢掉了 dense 全局线性上下文；
+- 曲线 token 只覆盖少数采样点，splat 无法恢复 LiteMLA 的 dense 特征；
+- 更多曲线/更软 splat 会进一步稀释或模糊特征；
+- 问题不是“覆盖参数不够”，而是 **曲线 tokenization 本身不适合当前 B0/数据**。
+
+### 7.3 最终判断
+
+CRA v1/v2 都是负结果，建议停止这条路线：
+
+```text
+CRA v1 : 56.13
+CRA v2 : 54.17–56.32
+baseline scratch : 58.29
+baseline pretrained : 62.22
+```
+
+不再继续调 `num_curves / points / curve_length / splat_sigma`。

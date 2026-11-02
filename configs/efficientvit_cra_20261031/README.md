@@ -14,6 +14,18 @@ MBConv 不变。
 
 baseline：`0.7045M / 0.564G`。
 
+40k from-scratch 结果：
+
+```text
+baseline scratch : 58.29 IoU/crack
+cra              : 56.32
+cra_dense        : 55.30
+cra_long         : 55.88
+cra_soft         : 54.17
+```
+
+四个 CRA 版本均低于 baseline；CRA 路线停止。
+
 ## 设计意图
 
 v1 的问题是 Recall 低，主要因为曲线覆盖不足。v2 分别从三个方向改：
