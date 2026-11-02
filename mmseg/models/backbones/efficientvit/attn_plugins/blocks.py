@@ -11,6 +11,7 @@ from .feature_mixers import (ASGLALiteMLA, CDGLASGLALiteMLA,
 from .modules import CoordAttention, EdgeGate, ResidualGlobalAttention, \
     ResidualWindowAttention
 from .oala import OALALiteMLA
+from .information_mixers import InformationLiteMLA
 
 
 class EfficientViTBlockCoord(EfficientViTBlock):
@@ -282,6 +283,26 @@ class EfficientViTBlockFeatureMixer(EfficientViTBlock):
         self.context_module = ResidualBlock(mixer, IdentityLayer())
 
 
+class EfficientViTBlockInformation(EfficientViTBlock):
+    """Preserve MBConv and LiteMLA parameter layouts for controlled ablations."""
+
+    def __init__(self, in_channels, dim=32, expand_ratio=4,
+                 norm=dict(type='BN'), act_func='hswish', stage_idx=2,
+                 mixer_type='magnitude', **kwargs):
+        super().__init__(in_channels=in_channels, dim=dim,
+                         expand_ratio=expand_ratio, norm=norm,
+                         act_func=act_func, **kwargs)
+        # late_channel deliberately preserves spatial LiteMLA at stage 2.
+        if mixer_type == 'late_channel' and stage_idx < 3:
+            return
+        mode = 'channel' if mixer_type == 'late_channel' else mixer_type
+        self.context_module = ResidualBlock(
+            InformationLiteMLA(
+                in_channels=in_channels, out_channels=in_channels,
+                dim=dim, heads_ratio=kwargs.get('heads_ratio', 1.0),
+                norm=(None, norm), mode=mode), IdentityLayer())
+
+
 class EfficientViTBlockCRA(EfficientViTBlock):
     """Replace LiteMLA with Curve-Routed Attention."""
 
@@ -351,8 +372,12 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
             stage_idx=stage_idx, mixer_type=block_type, **kwargs)
     if block_type == 'cra':
         return EfficientViTBlockCRA(stage_idx=stage_idx, **kwargs)
+    if block_type in ('magnitude', 'polarity', 'kv_reweight', 'late_channel'):
+        return EfficientViTBlockInformation(
+            stage_idx=stage_idx, mixer_type=block_type, **kwargs)
     raise ValueError(
         f'Unknown EfficientViT block_type {block_type!r}; '
         "expected one of 'v1', 'coord', 'hybrid', 'window', "
         "'replace_window', 'replace_global', 'replace_hybrid', "
-        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala', 'cra'")
+        "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala', 'cra', "
+        "'magnitude', 'polarity', 'kv_reweight', 'late_channel'")

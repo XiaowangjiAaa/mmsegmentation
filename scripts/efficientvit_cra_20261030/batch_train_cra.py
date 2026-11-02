@@ -199,7 +199,8 @@ def main():
         return
 
     check_runtime(gpus)
-    ensure_pretrained()
+    if not args.scratch:
+        ensure_pretrained()
 
     print(f'Repo      : {REPO_ROOT}')
     print(f'GPUs      : {gpus}')

@@ -1,5 +1,6 @@
 from .blocks import (EfficientViTBlockCoord, EfficientViTBlockCRA,
                      EfficientViTBlockFeatureMixer, EfficientViTBlockHybrid,
+                     EfficientViTBlockInformation,
                      EfficientViTBlockReplace, EfficientViTBlockWindow,
                      build_efficientvit_block)
 from .cra import CRAModule
@@ -8,6 +9,7 @@ from .feature_mixers import (ASGLALiteMLA, CDGLASGLALiteMLA,
 from .modules import (CoordAttention, EdgeGate, ResidualGlobalAttention,
                       ResidualWindowAttention)
 from .oala import OALALiteMLA
+from .information_mixers import InformationLiteMLA
 
 __all__ = [
     'CoordAttention', 'EdgeGate', 'ResidualGlobalAttention',
@@ -16,5 +18,6 @@ __all__ = [
     'EfficientViTBlockCoord', 'EfficientViTBlockCRA',
     'EfficientViTBlockFeatureMixer', 'EfficientViTBlockHybrid',
     'EfficientViTBlockReplace', 'EfficientViTBlockWindow',
-    'build_efficientvit_block'
+    'build_efficientvit_block', 'InformationLiteMLA',
+    'EfficientViTBlockInformation'
 ]

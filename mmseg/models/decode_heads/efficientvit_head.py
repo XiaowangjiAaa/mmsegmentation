@@ -8,6 +8,7 @@ few MBConv blocks, and predicts the segmentation logits at stride 8.
 """
 from typing import Optional, Sequence
 
+import torch
 import torch.nn as nn
 
 from mmseg.registry import MODELS
@@ -37,6 +38,11 @@ class EfficientViTHead(BaseDecodeHead):
         strides (Sequence[int]): Strides of the selected features.  Used to
             compute the upsampling factors relative to ``head_stride``.
         head_stride (int): Output stride of the head. Default: 8.
+        detail_channels (int): Width of an optional stride-4 logit correction
+            branch. Zero disables it. The main head remains at head_stride;
+            enabling this branch returns logits at the detail feature size.
+        detail_in_index (int): Index in backbone outputs for detail features.
+        detail_in_channels (int): Channels of the selected detail feature.
         act_cfg (dict): Activation config. Default: Hardswish.
         norm_cfg (dict): Normalization config. Default: ``dict(type='BN')``.
         **kwargs: Other arguments for :class:`BaseDecodeHead`.
@@ -56,6 +62,10 @@ class EfficientViTHead(BaseDecodeHead):
                  norm_cfg: Optional[dict] = dict(type='BN'),
                  dropout_ratio: float = 0.0,
                  init_cfg: Optional[dict] = None,
+                 detail_channels: int = 0,
+                 detail_in_index: int = 0,
+                 detail_in_channels: int = 16,
+                 detail_upsample_only: bool = False,
                  **kwargs):
         assert middle_op in ('mbconv', 'fmbconv'), \
             f'middle_op should be "mbconv" or "fmbconv", got {middle_op}'
@@ -135,6 +145,24 @@ class EfficientViTHead(BaseDecodeHead):
         else:
             self.final_expand_conv = None
 
+        self.detail_in_index = detail_in_index
+        self.detail_upsample_only = detail_upsample_only
+        if detail_channels < 0:
+            raise ValueError('detail_channels must be non-negative')
+        if detail_channels:
+            self.detail_branch = nn.Sequential(
+                nn.Conv2d(detail_in_channels, detail_channels, 1, bias=False),
+                nn.BatchNorm2d(detail_channels),
+                nn.Hardswish(),
+                nn.Conv2d(detail_channels, detail_channels, 3, padding=1,
+                          groups=detail_channels, bias=False),
+                nn.BatchNorm2d(detail_channels),
+                nn.Hardswish(),
+                nn.Conv2d(detail_channels, self.out_channels, 1))
+            self.detail_gamma = nn.Parameter(torch.zeros(1))
+        else:
+            self.detail_branch = None
+
     def forward(self, inputs):
         """Forward function.
 
@@ -142,7 +170,7 @@ class EfficientViTHead(BaseDecodeHead):
             inputs (list[Tensor]): Multi-level features from the backbone.
 
         Returns:
-            Tensor: Segmentation logits with stride ``head_stride``.
+            Tensor: Logits at ``head_stride`` or the enabled detail resolution.
         """
         feats = self._transform_inputs(inputs)
 
@@ -161,4 +189,13 @@ class EfficientViTHead(BaseDecodeHead):
         out = self.middle(fused)
         if self.final_expand_conv is not None:
             out = self.final_expand_conv(out)
-        return self.cls_seg(out)
+        logits = self.cls_seg(out)
+        if self.detail_upsample_only:
+            logits = resize(logits, inputs[self.detail_in_index].shape[-2:],
+                            mode='bilinear', align_corners=self.align_corners)
+        if self.detail_branch is not None:
+            detail = self.detail_branch(inputs[self.detail_in_index])
+            logits = resize(logits, detail.shape[-2:], mode='bilinear',
+                            align_corners=self.align_corners)
+            logits = logits + self.detail_gamma.tanh() * detail
+        return logits

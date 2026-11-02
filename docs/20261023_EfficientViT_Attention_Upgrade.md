@@ -1083,29 +1083,32 @@ python scripts/efficientvit_attn_20261023/batch_train_attn.py \
 
 `baseline,oala` 两组均完成 40k，fp32：
 
+2026-11-02 更正：这里应使用 20261027 同批次 baseline 的原始 scalars，
+此前误用了 20261024 baseline（62.22）。同批次结果如下；跨批次基线仍保留在第 12 节。
+
 | 模型 | best iter | mIoU | mDice | IoU/crack | F1/crack | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **baseline B0** | 37k | **80.70** | **88.15** | **62.22** | **76.71** | 75.74 | **77.70** |
+| **baseline B0（同批次）** | 36k | 80.56 | 88.04 | 61.94 | 76.50 | 74.87 | **78.20** |
 | OA-LA | 39k | 80.65 | 88.11 | 62.12 | 76.63 | **76.25** | 77.02 |
 
 相对 baseline：
 
 ```text
-IoU/crack : -0.10
-Dice/F1   : -0.08
-mIoU      : -0.05
-Precision : +0.51
-Recall    : -0.68
+IoU/crack : +0.18
+Dice/F1   : +0.13
+mIoU      : +0.09
+Precision : +1.38
+Recall    : -1.18
 ```
 
 最终 40k 点：
 
 ```text
-baseline: 61.81 IoU/crack
+baseline: 61.82 IoU/crack
 OA-LA   : 62.00 IoU/crack
 ```
 
-但按 best mIoU 选模型，OA-LA 仍然低 0.10。
+按 best mIoU 选模型，OA-LA 高于同批次 baseline 0.18，但低于此前 baseline 0.10。
 
 ### 14.7 判断
 
@@ -1114,9 +1117,9 @@ OA-LA   : 62.00 IoU/crack
   - CDGL 61.90
   - Foveal 61.86
   - **OA-LA 62.12**
-  - baseline 62.22
-- 但 **-0.10 IoU 仍在噪声量级**，不能证明方向场带来真实提升；
-- 代价是参数量 +28.8%、FLOPs +18.3%，性价比不成立；
+  - 同批次 baseline 61.94；此前 baseline 62.22
+- 两次 baseline 相差 0.28；**单次 +0.18 不能证明稳定提升**；
+- 代价是参数量 +28.8%、FLOPs +18.3%，尚未证明收益值得；
 - 方向分支不是没训练：`gamma` 约为：
 
 ```text
@@ -1124,12 +1127,12 @@ stage2: +0.079 / +0.101
 stage3: -0.084 / -0.069
 ```
 
-说明模型确实用了方向分支，但没有转化为精度收益。
+说明模型确实用了方向分支，但尚未证明可重复的精度收益。
 
 ### 14.8 结论与下一步
 
 - 不采用 OA-LA 作为新的 baseline；
-- 如果还要确认，建议用 **2–3 个随机种子** 重跑 baseline/OA-LA，看 -0.10 是否稳定；
+- 如果还要确认，建议用 **至少 3 个随机种子** 重跑 baseline/OA-LA，看同批次 +0.18 是否稳定；
 - 如果多 seed 仍然没有提升，建议停止 backbone attention 方向；
 - 后续优先级：
   1. 方向化 MBConv（替换所有 3×3 depthwise，而不是加 attention 分支）；
@@ -1137,4 +1140,4 @@ stage3: -0.084 / -0.069
   3. Tversky / class weight；
   4. B1/B2 容量。
 
-OA-LA 作为“方向自适应 token mixing”的负结果保留，不再继续堆 attention 变体。
+OA-LA 作为“尚未确认稳定收益”的结果保留，不应标记为已经证实的负结果。

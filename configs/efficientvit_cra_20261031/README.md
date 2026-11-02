@@ -24,7 +24,9 @@ cra_long         : 55.88
 cra_soft         : 54.17
 ```
 
-四个 CRA 版本均低于 baseline；CRA 路线停止。
+四个 CRA 版本均低于 baseline。2026-11-02 复核发现旧实现遗漏 seed 坐标且重复添加残差，
+现已修复；暂停根据旧结果终止路线的判断。修复后应使用
+`configs/efficientvit_recheck_20261102/` 的独立配置与 work_dir 复验，勿覆盖历史目录。
 
 ## 设计意图
 

@@ -1,5 +1,12 @@
 # Environment setup scripts
 
+## Lightweight EfficientViT experiments (2026-11-02)
+
+Use `scripts/efficientvit_light_20261102/batch_train.py` for the new paired-seed
+baseline/magnitude/polarity/KV/channel/detail/CRA experiments. See
+[`efficientvit_light_20261102/README.md`](efficientvit_light_20261102/README.md)
+for protocols, smoke verification and metric summaries.
+
 One-click scripts that create an isolated environment and install a
 known-good stack for this repository:
 

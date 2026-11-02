@@ -1,5 +1,9 @@
 # EfficientViT-B0 Curve-Routed Attention (2026-10-30)
 
+> 2026-11-02 更正：本文件的训练指标来自修复前实现。代码复核发现遗漏种子网格坐标、
+> context 内外重复添加 identity；现已修复。第 9 节的机制归因需重新验证，历史指标不改写。
+> 详见 [轻量 ViT 调研与实验建议](20261102_EfficientViT_Lightweight_Research.md)。
+
 ## 1. 为什么不是继续换 attention
 
 Round 1–4 的结论：

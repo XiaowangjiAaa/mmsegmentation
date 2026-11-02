@@ -1,5 +1,10 @@
 # EfficientViT-B0 CRA v2：覆盖改进实验（2026-10-31）
 
+> 2026-11-02 更正：以下表格保留为旧实现的历史结果。旧 CRA 遗漏 `seed_grid` 坐标，
+> 且内外重复添加 identity，context 初始化为 `2x`。现已修复；这些结果不能用于否定
+> 设计中的全图曲线机制。第 7 节停止路线的判断暂缓，修复后需另建目录重新对照。
+> 详见 [轻量 ViT 调研与实验建议](20261102_EfficientViT_Lightweight_Research.md)。
+
 ## 1. v1 的结论
 
 CRA v1（16 曲线 × 16 点）40k from scratch：

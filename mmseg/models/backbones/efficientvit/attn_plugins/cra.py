@@ -8,7 +8,8 @@ CRA replaces the dense grid token mixer with a small set of learned curves:
 4. curve tokens are mixed with curve-aware self-attention;
 5. curve tokens are splatted back to the feature map.
 
-The curve branch is zero-gated, so the module starts as an identity residual.
+The curve branch is zero-gated. This module returns only its residual update;
+the enclosing EfficientViT context block adds the identity shortcut.
 """
 import math
 from typing import Optional
@@ -103,7 +104,8 @@ class CRAModule(nn.Module):
                      self.point_embed.unsqueeze(0) +
                      global_context[:, None, None, :])
         offsets = torch.tanh(self.offset_mlp(embedding)) * self.offset_scale
-        coords = self.base_offsets.unsqueeze(0) + offsets
+        coords = (self.seed_grid[None, :, None, :] +
+                  self.base_offsets.unsqueeze(0) + offsets)
         coords = coords.clamp(-1.0, 1.0)
         sampled = F.grid_sample(
             x, coords, mode='bilinear', padding_mode='border',
@@ -177,4 +179,4 @@ class CRAModule(nn.Module):
         splat = self._splat(tokens, coords, h, w)
         local = self.local(x)
         fused = self.fuse(torch.cat([local, splat], dim=1))
-        return x + self.gamma * fused
+        return self.gamma * fused
