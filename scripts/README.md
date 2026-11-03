@@ -1,5 +1,11 @@
 # Environment setup scripts
 
+## Structure-module experiments (2026-11-04)
+
+The three new cross-scale modules use
+`scripts/efficientvit_structure_20261104/batch_train.py`.
+See [module definitions and training commands](efficientvit_structure_20261104/README.md).
+
 ## Lightweight EfficientViT experiments (2026-11-02)
 
 Use `scripts/efficientvit_light_20261102/batch_train.py` for the new paired-seed

@@ -32,6 +32,15 @@ class TestLightRunner(unittest.TestCase):
         self.assertIn('randomness.seed=42', cmd)
         self.assertIn('param_scheduler.1.end=40000', cmd)
 
+    def test_custom_registry_keeps_existing_runner_unchanged(self):
+        registry = dict(baseline='custom/baseline.py', partition='custom/partition.py')
+        args = RUNNER.parse_args(['--variants', 'all', '--seeds', '42'])
+        jobs = RUNNER.make_jobs(args, registry)
+        self.assertEqual([j['name'] for j in jobs], list(registry))
+        self.assertEqual(jobs[1]['config'], 'custom/partition.py')
+        self.assertIn('magnitude', RUNNER.VARIANTS)
+        self.assertNotIn('partition', RUNNER.VARIANTS)
+
     def test_reject_unfair_cra_and_duplicates(self):
         for extra in (['--variants', 'cra_fixed'],
                       ['--seeds', '42,42'],

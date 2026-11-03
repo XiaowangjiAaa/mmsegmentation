@@ -9,6 +9,7 @@ from .dm_head import DMHead
 from .dnl_head import DNLHead
 from .dpt_head import DPTHead
 from .efficientvit_head import EfficientViTHead
+from .efficientvit_structure_head import EfficientViTStructureHead
 from .ema_head import EMAHead
 from .enc_head import EncHead
 from .fcn_head import FCNHead
@@ -46,5 +47,5 @@ __all__ = [
     'SegformerHead', 'ISAHead', 'STDCHead', 'IterativeDecodeHead',
     'KernelUpdateHead', 'KernelUpdator', 'MaskFormerHead', 'Mask2FormerHead',
     'LightHamHead', 'PIDHead', 'DDRHead', 'VPDDepthHead', 'SideAdapterCLIPHead',
-    'EfficientViTHead'
+    'EfficientViTHead', 'EfficientViTStructureHead'
 ]

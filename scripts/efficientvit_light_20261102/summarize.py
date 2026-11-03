@@ -2,14 +2,15 @@
 import argparse
 from pathlib import Path
 
-from batch_train import read_metrics, save_summary
-
-
-def main():
+def main(argv=None, read_metrics_fn=None, save_summary_fn=None):
+    if read_metrics_fn is None or save_summary_fn is None:
+        from batch_train import read_metrics, save_summary
+        read_metrics_fn = read_metrics
+        save_summary_fn = save_summary
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path,
                         help='one protocol root, e.g. .../scratch/fp32')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     records = []
     for seed_dir in sorted(args.root.glob('seed*')):
         if not seed_dir.is_dir() or not seed_dir.name[4:].isdigit():
@@ -17,7 +18,7 @@ def main():
         for run in sorted(seed_dir.iterdir()):
             if not run.is_dir():
                 continue
-            metrics = read_metrics(run)
+            metrics = read_metrics_fn(run)
             if metrics:
                 # Scalar files alone do not prove process completion.
                 records.append(dict(name=run.name, seed=int(seed_dir.name[4:]),
@@ -26,7 +27,7 @@ def main():
         raise SystemExit('No validation scalars found at root/seed*/variant')
     # Never overwrite the authoritative process-status batch_summary.json.
     target = args.root / 'metrics_summary.json'
-    save_summary(target, records)
+    save_summary_fn(target, records)
     print(f'{len(records)} runs with validation metrics: {target}')
     print('This metric-only summary may include partial runs; check batch_summary.json.')
 

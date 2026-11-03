@@ -8,13 +8,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 
-def main():
+def main(argv=None, variants=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--size', type=int, default=64)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--no-yapf-cache', action='store_true',
                         help='process-only workaround for a blocked Windows YAPF cache')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.size < 32:
         parser.error('size must be at least 32')
     if args.no_yapf_cache:
@@ -26,12 +26,14 @@ def main():
     from mmseg.registry import MODELS
     from mmseg.structures import SegDataSample
     from mmseg.utils import register_all_modules
-    from batch_train import VARIANTS
+    if variants is None:
+        from batch_train import VARIANTS
+        variants = VARIANTS
 
     register_all_modules(init_default_scope=True)
     torch.set_num_threads(2)
     records = []
-    for name, path in VARIANTS.items():
+    for name, path in variants.items():
         torch.manual_seed(42)
         cfg = Config.fromfile(REPO_ROOT / path)
         model = MODELS.build(cfg.model).train()
@@ -51,7 +53,8 @@ def main():
             logits = model.decode_head(model.backbone(inputs))
         head_cfg = cfg.model.decode_head
         stride = 4 if (head_cfg.get('detail_channels', 0) or
-                       head_cfg.get('detail_upsample_only', False)) else 8
+                       head_cfg.get('detail_upsample_only', False) or
+                       head_cfg.type == 'EfficientViTStructureHead') else 8
         assert logits.shape == (2, 2, args.size // stride, args.size // stride)
         record = dict(name=name, parameters=sum(p.numel() for p in model.parameters()),
                       logits=list(logits.shape), loss=float(loss.detach()),

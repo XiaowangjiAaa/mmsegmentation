@@ -163,14 +163,14 @@ class EfficientViTHead(BaseDecodeHead):
         else:
             self.detail_branch = None
 
-    def forward(self, inputs):
-        """Forward function.
+    def forward_features(self, inputs):
+        """Return the original fused feature before the classifier.
 
         Args:
             inputs (list[Tensor]): Multi-level features from the backbone.
 
         Returns:
-            Tensor: Logits at ``head_stride`` or the enabled detail resolution.
+            Tensor: Fused features at ``head_stride``.
         """
         feats = self._transform_inputs(inputs)
 
@@ -189,7 +189,11 @@ class EfficientViTHead(BaseDecodeHead):
         out = self.middle(fused)
         if self.final_expand_conv is not None:
             out = self.final_expand_conv(out)
-        logits = self.cls_seg(out)
+        return out
+
+    def forward(self, inputs):
+        """Return main logits with optional stride-4 detail correction."""
+        logits = self.cls_seg(self.forward_features(inputs))
         if self.detail_upsample_only:
             logits = resize(logits, inputs[self.detail_in_index].shape[-2:],
                             mode='bilinear', align_corners=self.align_corners)

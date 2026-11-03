@@ -19,16 +19,18 @@ VARIANTS = {name: f'configs/efficientvit_light_20261102/{name}.py' for name in (
 METRICS = ('mIoU', 'IoU/crack', 'F1/crack', 'Precision/crack', 'Recall/crack')
 
 
-def parse_args(argv=None):
+def parse_args(argv=None, default_variants='baseline,magnitude,detail,magnitude_detail',
+               default_work_root='work_dirs/efficientvit_light_20261102'):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variants', default='baseline,magnitude,detail,magnitude_detail')
+    parser.add_argument('--variants', default=default_variants,
+                        help='comma-separated variant names, or all')
     parser.add_argument('--gpus', default='0,1', help='logical visible CUDA ids')
     parser.add_argument('--seeds', default='42,43,44')
     parser.add_argument('--batch-size', type=int, default=12)
     parser.add_argument('--max-iters', type=int, default=40000)
     parser.add_argument('--scratch', action='store_true')
     parser.add_argument('--amp', action='store_true', help='default fp32')
-    parser.add_argument('--work-root', default='work_dirs/efficientvit_light_20261102')
+    parser.add_argument('--work-root', default=default_work_root)
     parser.add_argument('--stop-on-failure', action='store_true')
     parser.add_argument('--poll', type=float, default=1)
     parser.add_argument('--dry-run', action='store_true')
@@ -39,10 +41,11 @@ def parse_args(argv=None):
     return args
 
 
-def make_jobs(args):
-    names = args.variants.split(',')
+def make_jobs(args, variants=None):
+    variants = VARIANTS if variants is None else variants
+    names = list(variants) if args.variants == 'all' else args.variants.split(',')
     seeds = [int(value) for value in args.seeds.split(',')]
-    if (len(set(names)) != len(names) or not set(names) <= VARIANTS.keys()
+    if (len(set(names)) != len(names) or not set(names) <= variants.keys()
             or len(set(seeds)) != len(seeds) or min(seeds) < 0):
         raise ValueError('Use unique known variants and unique non-negative seeds')
     if 'cra_fixed' in names and not args.scratch:
@@ -55,7 +58,7 @@ def make_jobs(args):
     # Isolate precision and initialization as well as variant and seed.
     root = root / ('scratch' if args.scratch else 'pretrained')
     root = root / ('amp' if args.amp else 'fp32')
-    return [dict(name=name, seed=seed, config=VARIANTS[name],
+    return [dict(name=name, seed=seed, config=variants[name],
                  work_dir=str(root / f'seed{seed}' / name))
             for seed in seeds for name in names]
 
@@ -134,13 +137,16 @@ def save_summary(path, records):
     temporary.replace(path)
 
 
-def main(argv=None):
-    args = parse_args(argv)
+def main(argv=None, variants=None,
+         default_variants='baseline,magnitude,detail,magnitude_detail',
+         default_work_root='work_dirs/efficientvit_light_20261102'):
+    variants = VARIANTS if variants is None else variants
+    args = parse_args(argv, default_variants, default_work_root)
     if args.list:
-        for name, config in VARIANTS.items():
+        for name, config in variants.items():
             print(f'{name:20s} {config}')
         return 0
-    jobs = make_jobs(args)
+    jobs = make_jobs(args, variants)
     gpus = args.gpus.split(',')
     if len(set(gpus)) != len(gpus) or not all(g.isdigit() for g in gpus):
         raise ValueError('gpus must be unique non-negative logical indices')
