@@ -5,6 +5,10 @@ import torch.nn.functional as F
 
 from mmseg.registry import MODELS
 from .efficientvit_head import EfficientViTHead
+from .efficientvit_subpixel_v2 import (StableSubpixelMemory,
+                                     SubpixelContrastMemory,
+                                     SubpixelWriteContrastMemory,
+                                     SubpixelWriteMemory)
 from .efficientvit_structure_modules import (DIRECTIONS,
                                              ReciprocalConnectivity,
                                              StructurePartitionMemory,
@@ -46,7 +50,7 @@ class EfficientViTStructureHead(EfficientViTHead):
     The original main classifier provides a dense semantic path. A narrow
     cross-scale module returns stride-4 features and a learned logit update.
     Partition/link supervision is training-only and explicitly included in loss.
-    All three modes use the same width and output resolution.
+    All structure modes use the same width and output resolution.
     """
 
     def __init__(self,
@@ -71,7 +75,11 @@ class EfficientViTStructureHead(EfficientViTHead):
         modules = dict(
             partition=StructurePartitionMemory,
             connectivity=ReciprocalConnectivity,
-            subpixel=SubpixelStructureMemory)
+            subpixel=SubpixelStructureMemory,
+            subpixel_write=SubpixelWriteMemory,
+            subpixel_contrast=SubpixelContrastMemory,
+            subpixel_write_contrast=SubpixelWriteContrastMemory,
+            subpixel_stable=StableSubpixelMemory)
         if structure_mode not in modules:
             raise ValueError(f'Unknown structure mode: {structure_mode}')
         self.structure_mode = structure_mode

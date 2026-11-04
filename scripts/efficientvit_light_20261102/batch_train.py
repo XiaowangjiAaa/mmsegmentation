@@ -108,8 +108,10 @@ def read_metrics(work_dir):
 
 def aggregate(records):
     result = {}
-    baselines = {r['seed']: r.get('metrics', {}).get('IoU/crack')
-                 for r in records if r['name'] == 'baseline' and r['status'] == 'ok'}
+    references = {
+        name: {r['seed']: r.get('metrics', {}).get('IoU/crack')
+               for r in records if r['name'] == name and r['status'] == 'ok'}
+        for name in ('baseline', 'detail_resize', 'detail', 'subpixel')}
     for name in dict.fromkeys(r['name'] for r in records):
         runs = [r for r in records if r['name'] == name and r['status'] == 'ok']
         summary = {'completed_runs': len(runs)}
@@ -118,13 +120,20 @@ def aggregate(records):
             if values:
                 summary[key] = dict(n=len(values), mean=statistics.mean(values),
                                     std=statistics.stdev(values) if len(values) > 1 else None)
-        pairs = [r['metrics']['IoU/crack'] - baselines[r['seed']] for r in runs
-                 if r.get('metrics', {}).get('IoU/crack') is not None
-                 and baselines.get(r['seed']) is not None]
-        if pairs:
-            summary['paired_delta_IoU/crack'] = dict(
-                n=len(pairs), mean=statistics.mean(pairs),
-                std=statistics.stdev(pairs) if len(pairs) > 1 else None)
+        paired = {}
+        for ref_name, ref in references.items():
+            pairs = [r['metrics']['IoU/crack'] - ref[r['seed']] for r in runs
+                     if r.get('metrics', {}).get('IoU/crack') is not None
+                     and ref.get(r['seed']) is not None]
+            if pairs:
+                paired[ref_name] = dict(
+                    n=len(pairs), mean=statistics.mean(pairs),
+                    std=statistics.stdev(pairs) if len(pairs) > 1 else None)
+        if paired:
+            summary['paired_deltas_IoU/crack'] = paired
+        if 'baseline' in paired:
+            # Preserve the legacy baseline field for existing consumers.
+            summary['paired_delta_IoU/crack'] = paired['baseline']
         result[name] = summary
     return result
 

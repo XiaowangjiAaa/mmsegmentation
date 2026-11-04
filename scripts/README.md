@@ -1,5 +1,11 @@
 # Environment setup scripts
 
+## Subpixel mechanism upgrades (2026-11-05)
+
+Use `scripts/efficientvit_subpixel_20261105/batch_train.py` for residual-memory
+writing, centered reconstruction and filtered sampling experiments.
+See [training and checkpoint diagnostics](efficientvit_subpixel_20261105/README.md).
+
 ## Structure-module experiments (2026-11-04)
 
 The three new cross-scale modules use

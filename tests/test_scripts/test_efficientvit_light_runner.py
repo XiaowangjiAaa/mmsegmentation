@@ -72,6 +72,17 @@ class TestLightRunner(unittest.TestCase):
         self.assertEqual(summary['paired_delta_IoU/crack']['mean'], 1.5)
         self.assertEqual(summary['paired_delta_IoU/crack']['n'], 2)
 
+    def test_subpixel_and_detail_are_additional_paired_references(self):
+        records = [dict(name=name, seed=42, status='ok',
+                        metrics={'IoU/crack': value}) for name, value in (
+                            ('baseline', 62), ('detail', 64),
+                            ('subpixel', 64.2), ('write', 64.5))]
+        result = RUNNER.aggregate(records)['write']
+        self.assertEqual(result['paired_delta_IoU/crack']['mean'], 2.5)
+        pairs = result['paired_deltas_IoU/crack']
+        self.assertEqual(pairs['detail']['mean'], 0.5)
+        self.assertAlmostEqual(pairs['subpixel']['mean'], 0.3)
+
     def test_failed_child_sets_exit_code_and_preserves_queue(self):
         with tempfile.TemporaryDirectory(dir=ROOT / 'work_dirs') as temp:
             fake_torch = SimpleNamespace(cuda=SimpleNamespace(device_count=lambda: 1))
