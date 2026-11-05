@@ -18,9 +18,9 @@ from mmengine.model import BaseModule
 
 from mmseg.registry import MODELS
 from .attn_plugins import build_efficientvit_block
-from .layers import (ConvLayer, DSConv, FusedMBConv,
-                     IdentityLayer, MBConv, OpSequential, ResBlock,
-                     ResidualBlock)
+from .layers import (ConvLayer, DSConv, FusedMBConv, IdentityLayer, MBConv,
+                     OpSequential, ResBlock, ResidualBlock)
+from .structure_features import StructureDownsample
 
 __all__ = ['EfficientViT']
 
@@ -44,6 +44,10 @@ class EfficientViT(BaseModule):
             Hardswish is used for the ``b`` series and GELU for the ``l``
             series.
         init_cfg (dict, optional): Initialization config.
+        downsample_mode (str): ``'structure'`` enables ordered phase-residual
+            compression alongside selected B-series strided MBConvs.
+        structure_downsample_stages (Sequence[int]): Stage transitions to
+            modify. Default (1, 2) means stride 4->8 and 8->16.
     """
 
     arch_settings = {
@@ -93,7 +97,9 @@ class EfficientViT(BaseModule):
                  act_cfg: Optional[dict] = None,
                  block_type: str = 'v1',
                  attn_kwargs: Optional[dict] = None,
-                 init_cfg: Optional[dict] = None):
+                 init_cfg: Optional[dict] = None,
+                 downsample_mode: str = 'v1',
+                 structure_downsample_stages: Sequence[int] = (1, 2)):
         super().__init__(init_cfg=init_cfg)
         assert arch in self.arch_settings, \
             f'Unknown EfficientViT arch {arch!r}. ' \
@@ -105,6 +111,22 @@ class EfficientViT(BaseModule):
         self.arch = arch
         self.block_type = block_type
         self.attn_kwargs = dict(attn_kwargs or {})
+        if downsample_mode not in ('v1', 'structure'):
+            raise ValueError(f'Unknown downsample_mode: {downsample_mode}')
+        if (len(set(structure_downsample_stages))
+                != len(structure_downsample_stages)
+                or any(s not in range(4)
+                       for s in structure_downsample_stages)):
+            raise ValueError(
+                'structure_downsample_stages must be unique stage indices 0..3'
+            )
+        if setting['large'] and (downsample_mode != 'v1' or block_type
+                                 in ('structure_query', 'context_local')):
+            raise ValueError(
+                'Structure feature prototypes currently support B backbones only'
+            )
+        self.downsample_mode = downsample_mode
+        self.structure_downsample_stages = tuple(structure_downsample_stages)
         self.is_large = setting['large']
         self.out_indices = tuple(out_indices)
         self.width_list: List[int] = []
@@ -168,7 +190,8 @@ class EfficientViT(BaseModule):
 
         # stages with local blocks only
         stages = []
-        for w, d in zip(width_list[1:3], depth_list[1:3]):
+        for stage_idx, (w,
+                        d) in enumerate(zip(width_list[1:3], depth_list[1:3])):
             stage = []
             for i in range(d):
                 stride = 2 if i == 0 else 1
@@ -178,9 +201,12 @@ class EfficientViT(BaseModule):
                     stride=stride,
                     expand_ratio=4,
                     norm=norm_cfg,
-                    act_func=act_cfg)
-                block = ResidualBlock(
-                    block, IdentityLayer() if stride == 1 else None)
+                    act_func=act_cfg,
+                    structure_downsample=(
+                        stride == 2 and self.downsample_mode == 'structure'
+                        and stage_idx in self.structure_downsample_stages))
+                block = ResidualBlock(block,
+                                      IdentityLayer() if stride == 1 else None)
                 stage.append(block)
                 in_channels = w
             stages.append(OpSequential(stage))
@@ -197,7 +223,10 @@ class EfficientViT(BaseModule):
                 expand_ratio=4,
                 norm=norm_cfg,
                 act_func=act_cfg,
-                fewer_norm=True)
+                fewer_norm=True,
+                structure_downsample=(self.downsample_mode == 'structure'
+                                      and stage_idx
+                                      in self.structure_downsample_stages))
             stage.append(ResidualBlock(block, None))
             in_channels = w
             for _ in range(d):
@@ -261,8 +290,8 @@ class EfficientViT(BaseModule):
                     norm=norm_cfg,
                     act_func=act_cfg,
                     fewer_norm=stage_id > 2)
-                block = ResidualBlock(
-                    block, IdentityLayer() if stride == 1 else None)
+                block = ResidualBlock(block,
+                                      IdentityLayer() if stride == 1 else None)
                 stage.append(block)
                 in_channels = w
             stages.append(OpSequential(stage))
@@ -306,7 +335,8 @@ class EfficientViT(BaseModule):
                            expand_ratio: float,
                            norm: dict,
                            act_func: dict,
-                           fewer_norm: bool = False) -> nn.Module:
+                           fewer_norm: bool = False,
+                           structure_downsample: bool = False) -> nn.Module:
         if expand_ratio == 1:
             block = DSConv(
                 in_channels=in_channels,
@@ -316,7 +346,8 @@ class EfficientViT(BaseModule):
                 norm=(None, norm) if fewer_norm else norm,
                 act_func=(act_func, None))
         else:
-            block = MBConv(
+            block_cls = StructureDownsample if structure_downsample else MBConv
+            block = block_cls(
                 in_channels=in_channels,
                 out_channels=out_channels,
                 stride=stride,

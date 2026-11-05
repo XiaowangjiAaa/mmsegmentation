@@ -1,5 +1,12 @@
 # Environment setup scripts
 
+## Encoder structure experiments (2026-11-06)
+
+Use `scripts/efficientvit_encoder_20261106/batch_train.py` for structure-aware
+downsampling, structure-conditioned LiteMLA queries and context-guided local
+feature extraction. The default four variants retain the original decode head.
+See [mechanisms, protocols and commands](efficientvit_encoder_20261106/README.md).
+
 ## Subpixel mechanism upgrades (2026-11-05)
 
 Use `scripts/efficientvit_subpixel_20261105/batch_train.py` for residual-memory

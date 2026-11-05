@@ -350,6 +350,10 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     original ``EfficientViTBlock``.
     """
     stage_idx = kwargs.pop('stage_idx', 2)
+    if block_type in ('structure_query', 'context_local'):
+        from ..structure_features import StructureQueryBlock, ContextGuidedLocalBlock
+        cls = StructureQueryBlock if block_type == 'structure_query' else ContextGuidedLocalBlock
+        return cls(**kwargs)
     if block_type in (None, 'v1', 'baseline'):
         return EfficientViTBlock(**kwargs)
     if block_type == 'coord':
@@ -380,4 +384,5 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
         "expected one of 'v1', 'coord', 'hybrid', 'window', "
         "'replace_window', 'replace_global', 'replace_hybrid', "
         "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala', 'cra', "
-        "'magnitude', 'polarity', 'kv_reweight', 'late_channel'")
+        "'magnitude', 'polarity', 'kv_reweight', 'late_channel', "
+        "'structure_query', 'context_local'")
