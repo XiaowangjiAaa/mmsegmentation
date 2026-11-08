@@ -1,5 +1,12 @@
 # Environment setup scripts
 
+## Semantic structure transition (2026-11-08)
+
+Use `scripts/efficientvit_transition_20261108/batch_train.py` to replace the
+stride 8->16 MBConv and reuse its first LiteMLA inside semantic-conditioned
+structure aggregation. This round defaults to scratch initialization.
+See [mechanisms, checkpoint migration and commands](efficientvit_transition_20261108/README.md).
+
 ## Encoder structure experiments (2026-11-06)
 
 Use `scripts/efficientvit_encoder_20261106/batch_train.py` for structure-aware

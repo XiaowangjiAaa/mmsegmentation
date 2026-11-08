@@ -20,7 +20,8 @@ METRICS = ('mIoU', 'IoU/crack', 'F1/crack', 'Precision/crack', 'Recall/crack')
 
 
 def parse_args(argv=None, default_variants='baseline,magnitude,detail,magnitude_detail',
-               default_work_root='work_dirs/efficientvit_light_20261102'):
+               default_work_root='work_dirs/efficientvit_light_20261102',
+               default_scratch=False):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--variants', default=default_variants,
                         help='comma-separated variant names, or all')
@@ -28,7 +29,10 @@ def parse_args(argv=None, default_variants='baseline,magnitude,detail,magnitude_
     parser.add_argument('--seeds', default='42,43,44')
     parser.add_argument('--batch-size', type=int, default=12)
     parser.add_argument('--max-iters', type=int, default=40000)
-    parser.add_argument('--scratch', action='store_true')
+    initialization = parser.add_mutually_exclusive_group()
+    initialization.add_argument('--scratch', dest='scratch', action='store_true')
+    initialization.add_argument('--pretrained', dest='scratch', action='store_false')
+    parser.set_defaults(scratch=default_scratch)
     parser.add_argument('--amp', action='store_true', help='default fp32')
     parser.add_argument('--work-root', default=default_work_root)
     parser.add_argument('--stop-on-failure', action='store_true')
@@ -111,7 +115,8 @@ def aggregate(records):
     references = {
         name: {r['seed']: r.get('metrics', {}).get('IoU/crack')
                for r in records if r['name'] == name and r['status'] == 'ok'}
-        for name in ('baseline', 'detail_resize', 'detail', 'subpixel')}
+        for name in ('baseline', 'detail_resize', 'detail', 'subpixel',
+                     'fixed', 'local', 'pooled')}
     for name in dict.fromkeys(r['name'] for r in records):
         runs = [r for r in records if r['name'] == name and r['status'] == 'ok']
         summary = {'completed_runs': len(runs)}
@@ -148,9 +153,10 @@ def save_summary(path, records):
 
 def main(argv=None, variants=None,
          default_variants='baseline,magnitude,detail,magnitude_detail',
-         default_work_root='work_dirs/efficientvit_light_20261102'):
+         default_work_root='work_dirs/efficientvit_light_20261102',
+         default_scratch=False):
     variants = VARIANTS if variants is None else variants
-    args = parse_args(argv, default_variants, default_work_root)
+    args = parse_args(argv, default_variants, default_work_root, default_scratch)
     if args.list:
         for name, config in variants.items():
             print(f'{name:20s} {config}')

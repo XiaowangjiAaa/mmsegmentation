@@ -21,6 +21,7 @@ from .attn_plugins import build_efficientvit_block
 from .layers import (ConvLayer, DSConv, FusedMBConv, IdentityLayer, MBConv,
                      OpSequential, ResBlock, ResidualBlock)
 from .structure_features import StructureDownsample
+from .semantic_transition import SemanticStructureTransition
 
 __all__ = ['EfficientViT']
 
@@ -48,6 +49,10 @@ class EfficientViT(BaseModule):
             compression alongside selected B-series strided MBConvs.
         structure_downsample_stages (Sequence[int]): Stage transitions to
             modify. Default (1, 2) means stride 4->8 and 8->16.
+        transition_mode (str): ``'semantic_structure'`` replaces the B-series
+            stride 8->16 downsampling and consumes its first LiteMLA.
+        transition_gate (str): Semantic/local/fixed/pooled mechanism control.
+        transition_width (int): Channels retained per structure component.
     """
 
     arch_settings = {
@@ -99,7 +104,10 @@ class EfficientViT(BaseModule):
                  attn_kwargs: Optional[dict] = None,
                  init_cfg: Optional[dict] = None,
                  downsample_mode: str = 'v1',
-                 structure_downsample_stages: Sequence[int] = (1, 2)):
+                 structure_downsample_stages: Sequence[int] = (1, 2),
+                 transition_mode: str = 'v1',
+                 transition_gate: str = 'semantic',
+                 transition_width: int = 8):
         super().__init__(init_cfg=init_cfg)
         assert arch in self.arch_settings, \
             f'Unknown EfficientViT arch {arch!r}. ' \
@@ -111,6 +119,20 @@ class EfficientViT(BaseModule):
         self.arch = arch
         self.block_type = block_type
         self.attn_kwargs = dict(attn_kwargs or {})
+        if transition_mode not in ('v1', 'semantic_structure'):
+            raise ValueError(f'Unknown transition_mode: {transition_mode}')
+        if transition_gate not in ('semantic', 'local', 'fixed', 'pooled'):
+            raise ValueError(f'Unknown transition_gate: {transition_gate}')
+        if transition_width < 1:
+            raise ValueError('transition_width must be positive')
+        if transition_mode != 'v1' and (
+                setting['large'] or block_type != 'v1'
+                or downsample_mode != 'v1'):
+            raise ValueError(
+                'Semantic transition requires B-series, v1 blocks and v1 downsampling')
+        self.transition_mode = transition_mode
+        self.transition_gate = transition_gate
+        self.transition_width = transition_width
         if downsample_mode not in ('v1', 'structure'):
             raise ValueError(f'Unknown downsample_mode: {downsample_mode}')
         if (len(set(structure_downsample_stages))
@@ -216,30 +238,44 @@ class EfficientViT(BaseModule):
         for stage_idx, (w, d) in enumerate(
                 zip(width_list[3:], depth_list[3:]), start=2):
             stage = []
-            block = self._build_local_block(
-                in_channels=in_channels,
-                out_channels=w,
-                stride=2,
-                expand_ratio=4,
-                norm=norm_cfg,
-                act_func=act_cfg,
-                fewer_norm=True,
-                structure_downsample=(self.downsample_mode == 'structure'
-                                      and stage_idx
-                                      in self.structure_downsample_stages))
-            stage.append(ResidualBlock(block, None))
-            in_channels = w
-            for _ in range(d):
+            joint_transition = (
+                stage_idx == 2 and self.transition_mode == 'semantic_structure')
+            if joint_transition:
                 stage.append(
-                    build_efficientvit_block(
-                        self.block_type,
-                        in_channels=in_channels,
-                        dim=dim,
-                        expand_ratio=4,
-                        norm=norm_cfg,
-                        act_func=act_cfg,
-                        stage_idx=stage_idx,
-                        **self.attn_kwargs))
+                    SemanticStructureTransition(
+                        in_channels, w, dim=dim,
+                        structure_width=self.transition_width,
+                        gate_mode=self.transition_gate, norm=norm_cfg,
+                        act_func=act_cfg))
+            else:
+                block = self._build_local_block(
+                    in_channels=in_channels,
+                    out_channels=w,
+                    stride=2,
+                    expand_ratio=4,
+                    norm=norm_cfg,
+                    act_func=act_cfg,
+                    fewer_norm=True,
+                    structure_downsample=(self.downsample_mode == 'structure'
+                                          and stage_idx
+                                          in self.structure_downsample_stages))
+                stage.append(ResidualBlock(block, None))
+            in_channels = w
+            for block_idx in range(d):
+                block = build_efficientvit_block(
+                    self.block_type,
+                    in_channels=in_channels,
+                    dim=dim,
+                    expand_ratio=4,
+                    norm=norm_cfg,
+                    act_func=act_cfg,
+                    stage_idx=stage_idx,
+                    **self.attn_kwargs)
+                if joint_transition and block_idx == 0:
+                    # Its attention already ran inside the transition. Retain
+                    # the local MBConv and its old checkpoint parameter names.
+                    block.context_module = IdentityLayer()
+                stage.append(block)
             stages.append(OpSequential(stage))
             self.width_list.append(in_channels)
 
