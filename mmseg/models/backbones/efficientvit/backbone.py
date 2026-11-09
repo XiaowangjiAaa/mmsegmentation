@@ -22,6 +22,7 @@ from .layers import (ConvLayer, DSConv, FusedMBConv, IdentityLayer, MBConv,
                      OpSequential, ResBlock, ResidualBlock)
 from .structure_features import StructureDownsample
 from .semantic_transition import SemanticStructureTransition
+from .adaptive_downsample import AdaptiveDownsampleMBConv
 
 __all__ = ['EfficientViT']
 
@@ -47,12 +48,16 @@ class EfficientViT(BaseModule):
         init_cfg (dict, optional): Initialization config.
         downsample_mode (str): ``'structure'`` enables ordered phase-residual
             compression alongside selected B-series strided MBConvs.
+            ``'adaptive_structure/content/static/uniform'`` replaces only the
+            stride 8->16 depthwise spatial kernel with local aggregation.
         structure_downsample_stages (Sequence[int]): Stage transitions to
             modify. Default (1, 2) means stride 4->8 and 8->16.
         transition_mode (str): ``'semantic_structure'`` replaces the B-series
             stride 8->16 downsampling and consumes its first LiteMLA.
         transition_gate (str): Semantic/local/fixed/pooled mechanism control.
         transition_width (int): Channels retained per structure component.
+        adaptive_groups (int): Channel groups in adaptive stride 8->16 routing.
+        adaptive_width (int): Local routing descriptor channels.
     """
 
     arch_settings = {
@@ -107,7 +112,9 @@ class EfficientViT(BaseModule):
                  structure_downsample_stages: Sequence[int] = (1, 2),
                  transition_mode: str = 'v1',
                  transition_gate: str = 'semantic',
-                 transition_width: int = 8):
+                 transition_width: int = 8,
+                 adaptive_groups: int = 4,
+                 adaptive_width: int = 8):
         super().__init__(init_cfg=init_cfg)
         assert arch in self.arch_settings, \
             f'Unknown EfficientViT arch {arch!r}. ' \
@@ -133,8 +140,14 @@ class EfficientViT(BaseModule):
         self.transition_mode = transition_mode
         self.transition_gate = transition_gate
         self.transition_width = transition_width
-        if downsample_mode not in ('v1', 'structure'):
+        if downsample_mode not in ('v1', 'structure', 'adaptive_structure',
+                                   'adaptive_content', 'adaptive_static',
+                                   'adaptive_uniform'):
             raise ValueError(f'Unknown downsample_mode: {downsample_mode}')
+        if adaptive_groups < 1 or adaptive_width < 1:
+            raise ValueError('adaptive_groups and adaptive_width must be positive')
+        self.adaptive_groups = adaptive_groups
+        self.adaptive_width = adaptive_width
         if (len(set(structure_downsample_stages))
                 != len(structure_downsample_stages)
                 or any(s not in range(4)
@@ -258,7 +271,13 @@ class EfficientViT(BaseModule):
                     fewer_norm=True,
                     structure_downsample=(self.downsample_mode == 'structure'
                                           and stage_idx
-                                          in self.structure_downsample_stages))
+                                          in self.structure_downsample_stages),
+                    adaptive_mode=(
+                        self.downsample_mode[len('adaptive_'):]
+                        if stage_idx == 2
+                        and self.downsample_mode.startswith('adaptive_') else None),
+                    adaptive_groups=self.adaptive_groups,
+                    adaptive_width=self.adaptive_width)
                 stage.append(ResidualBlock(block, None))
             in_channels = w
             for block_idx in range(d):
@@ -372,7 +391,10 @@ class EfficientViT(BaseModule):
                            norm: dict,
                            act_func: dict,
                            fewer_norm: bool = False,
-                           structure_downsample: bool = False) -> nn.Module:
+                           structure_downsample: bool = False,
+                           adaptive_mode: Optional[str] = None,
+                           adaptive_groups: int = 4,
+                           adaptive_width: int = 8) -> nn.Module:
         if expand_ratio == 1:
             block = DSConv(
                 in_channels=in_channels,
@@ -382,7 +404,14 @@ class EfficientViT(BaseModule):
                 norm=(None, norm) if fewer_norm else norm,
                 act_func=(act_func, None))
         else:
-            block_cls = StructureDownsample if structure_downsample else MBConv
+            extra = {}
+            if adaptive_mode is not None:
+                block_cls = AdaptiveDownsampleMBConv
+                extra = dict(adaptive_mode=adaptive_mode,
+                             adaptive_groups=adaptive_groups,
+                             adaptive_width=adaptive_width)
+            else:
+                block_cls = StructureDownsample if structure_downsample else MBConv
             block = block_cls(
                 in_channels=in_channels,
                 out_channels=out_channels,
@@ -390,7 +419,8 @@ class EfficientViT(BaseModule):
                 expand_ratio=expand_ratio,
                 use_bias=(True, True, False) if fewer_norm else False,
                 norm=(None, None, norm) if fewer_norm else norm,
-                act_func=(act_func, act_func, None))
+                act_func=(act_func, act_func, None),
+                **extra)
         return block
 
     @staticmethod

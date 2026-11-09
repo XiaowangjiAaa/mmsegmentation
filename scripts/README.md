@@ -1,5 +1,12 @@
 # Environment setup scripts
 
+## Local adaptive downsampling (2026-11-10)
+
+Use `scripts/efficientvit_adaptive_20261110/batch_train.py` for group-wise
+structure routing inside the stride 8->16 MBConv. Attention and the decode head
+remain original. This round defaults to scratch initialization.
+See [mechanisms, controls and commands](efficientvit_adaptive_20261110/README.md).
+
 ## Semantic structure transition (2026-11-08)
 
 Use `scripts/efficientvit_transition_20261108/batch_train.py` to replace the
