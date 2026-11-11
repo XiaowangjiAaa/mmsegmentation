@@ -350,6 +350,10 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
     original ``EfficientViTBlock``.
     """
     stage_idx = kwargs.pop('stage_idx', 2)
+    if block_type in ('core_bank_structure', 'core_bank_content', 'core_bank_uniform',
+                      'core_joint', 'core_joint_fixed', 'core_postfusion'):
+        from .core_attention import EfficientViTBlockCore
+        return EfficientViTBlockCore(mode=block_type[len('core_'):], **kwargs)
     if block_type in ('structure_query', 'context_local'):
         from ..structure_features import StructureQueryBlock, ContextGuidedLocalBlock
         cls = StructureQueryBlock if block_type == 'structure_query' else ContextGuidedLocalBlock
@@ -385,4 +389,6 @@ def build_efficientvit_block(block_type: str = 'v1', **kwargs):
         "'replace_window', 'replace_global', 'replace_hybrid', "
         "'asgla', 'cdgl', 'cdgl_asgla', 'foveal', 'oala', 'cra', "
         "'magnitude', 'polarity', 'kv_reweight', 'late_channel', "
-        "'structure_query', 'context_local'")
+        "'structure_query', 'context_local', 'core_bank_structure', "
+        "'core_bank_content', 'core_bank_uniform', 'core_joint', "
+        "'core_joint_fixed', 'core_postfusion'")

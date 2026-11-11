@@ -116,7 +116,8 @@ def aggregate(records):
         name: {r['seed']: r.get('metrics', {}).get('IoU/crack')
                for r in records if r['name'] == name and r['status'] == 'ok'}
         for name in ('baseline', 'detail_resize', 'detail', 'subpixel',
-                     'fixed', 'local', 'pooled', 'content', 'static', 'uniform')}
+                     'fixed', 'local', 'pooled', 'content', 'static', 'uniform',
+                     'bank_content', 'bank_uniform', 'joint_fixed', 'postfusion')}
     for name in dict.fromkeys(r['name'] for r in records):
         runs = [r for r in records if r['name'] == name and r['status'] == 'ok']
         summary = {'completed_runs': len(runs)}

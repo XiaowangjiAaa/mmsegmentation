@@ -1,5 +1,12 @@
 # Environment setup scripts
 
+## LiteMLA core replacements (2026-11-12)
+
+Use `scripts/efficientvit_core_20261112/batch_train.py` for structure-related
+global memories and jointly normalized local/global reads. All four LiteMLA
+operators change; original downsampling and the decode head stay fixed.
+See [mechanisms, controls and commands](efficientvit_core_20261112/README.md).
+
 ## Local adaptive downsampling (2026-11-10)
 
 Use `scripts/efficientvit_adaptive_20261110/batch_train.py` for group-wise
